@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask SANRI</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --card:#121923;
+      --line:#243246;
+      --text:#e9eef7;
+      --muted:#9fb0c6;
+      --gold:#caa46a;
+      --btn:#1b2533;
+      --btn2:#243246;
+      --accent:#3b82f6;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-serif, Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(1200px 600px at 20% -10%, rgba(202,164,106,.18), transparent 60%),
+        radial-gradient(900px 500px at 90% 0%, rgba(59,130,246,.10), transparent 55%),
+        radial-gradient(900px 500px at 50% 120%, rgba(202,164,106,.10), transparent 55%),
+        var(--bg);
+      color:var(--text);
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+    }
+    .wrap{width:100%; max-width:980px}
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom:16px;
+      opacity:.95;
+    }
+    .brand{
+      display:flex; gap:10px; align-items:center;
+      letter-spacing:.08em;
+      color:var(--text);
+    }
+    .logo{
+      width:34px; height:34px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      display:flex; align-items:center; justify-content:center;
+      color:var(--gold);
+      background:rgba(255,255,255,.02);
+      font-weight:700;
+    }
+    .brand small{
+      display:block;
+      color:var(--muted);
+      letter-spacing:.14em;
+      font-size:12px;
+      margin-top:2px;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+    }
+    .toggle{
+      display:flex; gap:10px; align-items:center;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .pill{
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.02);
+      border-radius:999px;
+      padding:6px 10px;
+      cursor:pointer;
+      color:var(--text);
+      font-size:12px;
+    }
+    .card{
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
+      border-radius:18px;
+      padding:26px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
+    .titleTop{
+      text-align:center;
+      color:var(--muted);
+      letter-spacing:.16em;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      font-size:12px;
+      margin-bottom:6px;
+    }
+    h1{
+      margin:0;
+      text-align:center;
+      font-weight:500;
+      letter-spacing:.06em;
+      font-size:56px;
+      line-height:1.05;
+    }
+    .lead{
+      margin:18px auto 10px;
+      max-width:680px;
+      text-align:center;
+      color:var(--muted);
+      font-family: ui-serif, Georgia, "Times New Roman", serif;
+      font-size:18px;
+      line-height:1.65;
+      font-style:italic;
+    }
+    .sublead{
+      margin:0 auto 18px;
+      max-width:720px;
+      text-align:center;
+      color:rgba(233,238,247,.78);
+      font-family: ui-serif, Georgia, "Times New Roman", serif;
+      font-size:16px;
+      line-height:1.7;
+    }
+    .note{
+      border:1px solid rgba(202,164,106,.35);
+      background: rgba(202,164,106,.08);
+      border-radius:14px;
+      padding:14px 16px;
+      color:rgba(233,238,247,.86);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      font-size:13px;
+      line-height:1.5;
+      margin:16px auto 18px;
+      max-width:860px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:14px;
+      margin-top:14px;
+    }
+    @media (min-width: 860px){
+      .grid{grid-template-columns: 1fr 1fr;}
+    }
+    .section{
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:16px;
+      background: rgba(0,0,0,.12);
+    }
+    .sectionTitle{
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      color:var(--muted);
+      font-size:12px;
+      letter-spacing:.12em;
+      margin-bottom:10px;
+    }
+    .row{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .btn{
+      padding:10px 14px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background: var(--btn);
+      color: var(--text);
+      cursor:pointer;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      font-size:13px;
+      user-select:none;
+    }
+    .btn:hover{background: rgba(255,255,255,.05)}
+    .btn.active{
+      border-color: rgba(202,164,106,.7);
+      box-shadow: 0 0 0 3px rgba(202,164,106,.12) inset;
+    }
+    .btn.primary{
+      background: linear-gradient(180deg, rgba(202,164,106,.22), rgba(202,164,106,.10));
+      border-color: rgba(202,164,106,.7);
+      color: var(--text);
+      font-weight:600;
+    }
+    .btn.primary:hover{background: rgba(202,164,106,.20)}
+    .footer{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:16px;
+      color:var(--muted);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      font-size:12px;
+    }
+    .hint{opacity:.85}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">∞</div>
+        <div>
+          <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif; font-size:12px; letter-spacing:.12em;">
+            CAELINUS
+          </div>
+          <small>GODDESSES OF ANATOLIA</small>
+        </div>
+      </div>
+
+      <div class="toggle">
+        <span id="langLabel">TR</span>
+        <button class="pill" id="langBtn" type="button">Dil</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="titleTop" id="kicker">CONSCIOUSNESS MIRROR</div>
+      <h1 id="headline">Ask SANRI</h1>
+
+      <div class="lead" id="lead1">Bir an dur.</div>
+      <div class="sublead" id="lead2">
+        Sorunu yazmadan once, bunun bedende nerede hissedildigine bak.
+        Kalpte mi. Midede mi. Bogazda mi.
+        SANRI cevap vermek icin degil, sorunun icindeki kapiyi acmak icindir.
+      </div>
+<div class="notice">
+  <b>Güven Çerçevesi</b><br/>
+  SANRI bir teşhis aracı değildir. Yargılamaz, kehanet sunmaz.
+  Burada paylaşılanlar semboliktir ve kişisel farkındalığı destekler.
+  Kendin veya başkaları için acil durumlarda profesyonel destek alın.
+</div>
+
+      <div class="note" id="noteBox">
+        <b>Not:</b> SANRI kehanet, teshis ya da yargi sunmaz. Sembolik anlam ve ucu acik sorular uretir.
+      </div>
+
+      <div class="grid">
+        <div class="section">
+          <div class="sectionTitle" id="modeTitle">Bir mod sec</div>
+          <div class="row" id="modeRow">
+            <button class="btn" data-mode="dream" type="button">Dream</button>
+            <button class="btn active" data-mode="mirror" type="button">Mirror</button>
+            <button class="btn" data-mode="divine" type="button">Divine</button>
+            <button class="btn" data-mode="shadow" type="button">Shadow</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="sectionTitle" id="domainTitle">Alan secimi (istege bagli)</div>
+          <div class="row" id="domainRow">
+            <button class="btn active" data-domain="auto" type="button" id="autoBtn">Auto</button>
+            <button class="btn" data-domain="awakened_cities" type="button">Awakened Cities</button>
+            <button class="btn" data-domain="bilinc_alani" type="button">Consciousness Field</button>
+            <button class="btn" data-domain="frequency_field" type="button">Frequency Field</button>
+            <button class="btn" data-domain="ritual_space" type="button">Ritual Space</button>
+            <button class="btn" data-domain="book_112" type="button">Book 112</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="hint" id="hintLeft">Secimler cihazinda saklanir. Istedigin zaman degistirebilirsin.</div>
+        <div class="row">
+          <button class="btn" id="resetBtn" type="button">Atla</button>
+          <button class="btn primary" id="startBtn" type="button">Basla</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const LS_KEY = "sanri_prefs_v1";
+      const qs = (s) => document.querySelector(s);
+      const qsa = (s) => Array.from(document.querySelectorAll(s));
+
+      const i18n = {
+        tr: {
+          kicker: "CONSCIOUSNESS MIRROR",
+          headline: "Ask SANRI",
+          lead1: "Bir an dur.",
+          lead2: "Sorunu yazmadan once, bunun bedende nerede hissedildigine bak. Kalpte mi. Midede mi. Bogazda mi. SANRI cevap vermek icin degil, sorunun icindeki kapiyi acmak icindir.",
+          note: "<b>Not:</b> SANRI kehanet, teshis ya da yargi sunmaz. Sembolik anlam ve ucu acik sorular uretir.",
+          modeTitle: "Bir mod sec",
+          domainTitle: "Alan secimi (istege bagli)",
+          hint: "Secimler cihazinda saklanir. Istedigin zaman degistirebilirsin.",
+          langLabel: "TR",
+          langBtn: "Dil",
+          skip: "Atla",
+          start: "Basla"
+        },
+        en: {
+          kicker: "CONSCIOUSNESS MIRROR",
+          headline: "Ask SANRI",
+          lead1: "Pause for a moment.",
+          lead2: "Before writing your question, notice where it is felt in your body. In the heart. In the stomach. In the throat. SANRI does not give answers. It opens the door within your question.",
+          note: "<b>Note:</b> SANRI does not offer prophecy, diagnosis, or judgment. It generates symbolic meaning and open ended questions.",
+          modeTitle: "Choose a mode",
+          domainTitle: "Select domain (optional)",
+          hint: "Your choices are stored on this device. You can change them anytime.",
+          langLabel: "EN",
+          langBtn: "Language",
+          skip: "Skip",
+          start: "Start"
+        }
+      };
+
+      function loadPrefs(){
+        try{
+          const raw = localStorage.getItem(LS_KEY);
+          if(!raw) return { lang:"tr", mode:"mirror", domain:"auto" };
+          const obj = JSON.parse(raw);
+          return {
+            lang: obj.lang === "en" ? "en" : "tr",
+            mode: obj.mode || "mirror",
+            domain: obj.domain || "auto"
+          };
+        }catch{
+          return { lang:"tr", mode:"mirror", domain:"auto" };
+        }
+      }
+
+      function savePrefs(p){
+        localStorage.setItem(LS_KEY, JSON.stringify(p));
+      }
+
+      function applyLang(lang){
+        const t = i18n[lang] || i18n.tr;
+        qs("#kicker").textContent = t.kicker;
+        qs("#headline").textContent = t.headline;
+        qs("#lead1").textContent = t.lead1;
+        qs("#lead2").textContent = t.lead2;
+        qs("#noteBox").innerHTML = t.note;
+        qs("#modeTitle").textContent = t.modeTitle;
+        qs("#domainTitle").textContent = t.domainTitle;
+        qs("#hintLeft").textContent = t.hint;
+        qs("#langLabel").textContent = t.langLabel;
+        qs("#langBtn").textContent = t.langBtn;
+        qs("#resetBtn").textContent = t.skip;
+        qs("#startBtn").textContent = t.start;
+      }
+
+      function setActive(groupSelector, attrName, value){
+        qsa(groupSelector + " .btn").forEach(b=>{
+          const v = b.getAttribute(attrName);
+          if(v === value) b.classList.add("active");
+          else b.classList.remove("active");
+        });
+      }
+
+      const prefs = loadPrefs();
+      applyLang(prefs.lang);
+      setActive("#modeRow", "data-mode", prefs.mode);
+      setActive("#domainRow", "data-domain", prefs.domain);
+
+      qs("#langBtn").addEventListener("click", ()=>{
+        prefs.lang = (prefs.lang === "tr") ? "en" : "tr";
+        applyLang(prefs.lang);
+        savePrefs(prefs);
+      });
+
+      qsa("#modeRow .btn").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          prefs.mode = btn.getAttribute("data-mode");
+          setActive("#modeRow","data-mode",prefs.mode);
+          savePrefs(prefs);
+        });
+      });
+
+      qsa("#domainRow .btn").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          prefs.domain = btn.getAttribute("data-domain");
+          setActive("#domainRow","data-domain",prefs.domain);
+          savePrefs(prefs);
+        });
+      });
+
+      qs("#resetBtn").addEventListener("click", ()=>{
+        const def = { lang: prefs.lang, mode:"mirror", domain:"auto" };
+        prefs.mode = def.mode;
+        prefs.domain = def.domain;
+        setActive("#modeRow","data-mode",prefs.mode);
+        setActive("#domainRow","data-domain",prefs.domain);
+        savePrefs(prefs);
+      });
+
+      qs("#startBtn").addEventListener("click", ()=>{
+        const params = new URLSearchParams();
+        params.set("lang", prefs.lang);
+        params.set("mode", prefs.mode);
+        params.set("domain", prefs.domain);
+        window.location.href = "/static/panel.html?" + params.toString();
+      });
+    })();
+  </script>
+</body>
+</html>

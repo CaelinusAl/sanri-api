@@ -1,0 +1,15 @@
+# env
+.env
+
+# python
+_pycache_/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+
+# runtime data
+data/
+data_OLD/
+
+
