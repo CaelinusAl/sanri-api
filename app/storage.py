@@ -1,41 +1,56 @@
 import json
-import os
+import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timezone
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 class MemoryStore:
-    def _init_(self, data_dir: str):
-        self.data_dir = data_dir
-        os.makedirs(self.data_dir, exist_ok=True)
+    """
+    JSON file-based memory store.
+    Stores per-session conversation history as:
+    [{"role":"user","content":"..."}, {"role":"assistant","content":"..."}]
+    """
+    def _init_(self, data_dir: str | Path = "data") -> None:
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
 
-    def _path(self, session_id: str) -> str:
-        safe = "".join([c for c in session_id if c.isalnum() or c in ("-", "_")])
-        return os.path.join(self.data_dir, f"{safe}.json")
+    def _path(self, session_id: str) -> Path:
+        safe = "".join(ch for ch in (session_id or "default") if ch.isalnum() or ch in ("-", "_"))
+        if not safe:
+            safe = "default"
+        return self.data_dir / f"{safe}.json"
 
-    def get(self, session_id: str) -> Dict[str, Any]:
+    def get_memory(self, session_id: str) -> List[Dict[str, str]]:
         p = self._path(session_id)
-        if not os.path.exists(p):
-            return {"session_id": session_id, "created_at": _utc_now_iso(), "messages": []}
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
+        if not p.exists():
+            return []
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(obj, list):
+                # normalize keys
+                out = []
+                for m in obj:
+                    role = str(m.get("role", "")).strip()
+                    content = str(m.get("content", "")).strip()
+                    if role and content:
+                        out.append({"role": role, "content": content})
+                return out
+            return []
+        except Exception:
+            return []
 
-    def save(self, session_id: str, doc: Dict[str, Any]) -> None:
+    def add_message(self, session_id: str, role: str, content: str) -> None:
+        if not session_id:
+            session_id = "default"
+        role = (role or "").strip()
+        content = (content or "").strip()
+        if not role or not content:
+            return
+
+        mem = self.get_memory(session_id)
+        mem.append({"role": role, "content": content})
         p = self._path(session_id)
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump(doc, f, ensure_ascii=False, indent=2)
+        p.write_text(json.dumps(mem, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def append_message(self, session_id: str, role: str, content: str) -> Dict[str, Any]:
-        doc = self.get(session_id)
-        if "messages" not in doc:
-            doc["messages"] = []
-        doc["messages"].append({"role": role, "content": content, "ts": _utc_now_iso()})
-        self.save(session_id, doc)
-        return doc
-
-    def clear(self, session_id: str) -> None:
-        p = self._path(session_id)
-        if os.path.exists(p):
-            os.remove(p)
+    def add_turn(self, session_id: str, user_text: str, assistant_text: str) -> None:
+        self.add_message(session_id, "user", user_text)
+        self.add_message(session_id, "assistant", assistant_text)

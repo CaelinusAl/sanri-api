@@ -45,9 +45,7 @@ def ask(req: AskRequest):
         return AskResponse(response="", session_id=req.session_id, mode=req.mode)
 
     
-    system_prompt = build_system_prompt(req.mode)
-    print("PROMPT_IMZA:", "SANRI_V3_SADE" in system_prompt)
-
+    system_prompt = SANRI_SYSTEM_PROMPT
 
     print("\n===== SYSTEM PROMPT (ACTIVE) =====")
     print(system_prompt[:500])
@@ -62,11 +60,17 @@ def ask(req: AskRequest):
     client = get_client()
 
     completion = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=messages,
-        temperature=0.25,
-        max_tokens=300,
-    )
+    model=MODEL_NAME,
+    messages=[
+        {"role": "system", "content": system_prompt},
+        *history,
+        {"role": "user", "content": user_text},
+    ],
+    temperature=0.15,
+    max_tokens=180,
+    presence_penalty=0.0,
+    frequency_penalty=0.0,
+)
 
     reply = completion.choices[0].message.content.strip()
     if not reply:
