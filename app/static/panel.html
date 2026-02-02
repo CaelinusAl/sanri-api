@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ask SANRI</title>
+  <title>Ask SANRI • Panel</title>
   <style>
     :root{
       --bg:#0e1116; --card:#141a22; --soft:#1b2230; --border:#2b3450;
@@ -11,22 +11,43 @@
       --radius:16px;
     }
     *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;background:radial-gradient(1200px 600px at 50% -10%, #1a2030 0%, #0e1116 60%);
-      color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:18px;}
+    body{
+      margin:0; min-height:100vh;
+      background:radial-gradient(1200px 600px at 50% -10%, #1a2030 0%, #0e1116 60%);
+      color:var(--text);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      padding:18px;
+    }
     .wrap{max-width:1200px;margin:0 auto;display:grid;gap:14px;grid-template-columns:420px 1fr}
     @media(max-width:1100px){.wrap{grid-template-columns:1fr}}
-    .card{background:linear-gradient(180deg,#141a22,#0f141d);border:1px solid var(--border);border-radius:24px;
-      padding:16px;box-shadow:0 24px 70px rgba(0,0,0,.45);}
-    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+
+    .card{
+      background:linear-gradient(180deg,#141a22,#0f141d);
+      border:1px solid var(--border);
+      border-radius:24px;
+      padding:16px;
+      box-shadow:0 24px 70px rgba(0,0,0,.45);
+    }
+    header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
     .brand{display:flex;gap:10px;align-items:center}
-    .logo{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#2a3246,#121826);
-      display:grid;place-items:center;color:var(--gold);border:1px solid #2b3450;font-weight:700;}
+    .logo{
+      width:34px;height:34px;border-radius:50%;
+      background:linear-gradient(135deg,#2a3246,#121826);
+      display:grid;place-items:center;color:var(--gold);
+      border:1px solid #2b3450;font-weight:700;
+    }
     .title{font-weight:700;letter-spacing:.5px}
     .sub{font-size:12px;color:var(--muted)}
     .bar{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
-    .pill{padding:8px 12px;border-radius:999px;border:1px solid var(--border);background:#101622;color:var(--muted);font-size:12px;}
+    .pill{
+      padding:8px 12px;border-radius:999px;border:1px solid var(--border);
+      background:#101622;color:var(--muted);font-size:12px;
+    }
     .pill b{color:var(--gold);font-weight:700}
-    .select{padding:8px 10px;border-radius:12px;border:1px solid var(--border);background:#101622;color:var(--text);outline:none;}
+    .select{
+      padding:8px 10px;border-radius:12px;border:1px solid var(--border);
+      background:#101622;color:var(--text);outline:none;
+    }
     .sectionTitle{font-weight:700;margin:10px 0 8px}
     #gateList{display:flex;flex-wrap:wrap;gap:8px}
 
@@ -44,31 +65,53 @@
       font-weight: 700;
       box-shadow: 0 0 12px rgba(214,179,106,.35);
     }
+    .gateBtn{
+      cursor:pointer;padding:8px 10px;border-radius:999px;border:1px solid var(--border);
+      font-size:12px;
+    }
+    .gateBtn.active{box-shadow:0 0 0 2px rgba(111,168,255,.18) inset}
     .gate-v2.active{
       box-shadow: 0 0 0 2px rgba(255,215,130,.9),
                   0 0 18px rgba(214,179,106,.6);
     }
 
-    .gateBtn{cursor:pointer;padding:8px 10px;border-radius:999px;border:1px solid var(--border);
-      background:linear-gradient(180deg,#141a22,#0f141d);color:var(--text);font-size:12px;}
-    .gateBtn.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(111,168,255,.15) inset}
     .kv{line-height:1.55;font-size:13px;color:#cfd7e7}
     .kv b{color:var(--text)}
     .kv .muted{color:var(--muted)}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .btn{cursor:pointer;padding:10px 14px;border-radius:14px;border:1px solid var(--border);background:var(--soft);color:#fff;}
+    .btn{
+      cursor:pointer;padding:10px 14px;border-radius:14px;border:1px solid var(--border);
+      background:var(--soft);color:#fff;
+    }
     .btn:hover{filter:brightness(1.05)}
-    .btn.primary{background:linear-gradient(135deg,#6fa8ff,#7c8cff);border:none;color:#0b1020;font-weight:700;}
+    .btn.primary{
+      background:linear-gradient(135deg,#6fa8ff,#7c8cff);
+      border:none;color:#0b1020;font-weight:700;
+    }
     .btn:disabled{opacity:.5;cursor:not-allowed}
-    .chatlog{height:520px;overflow:auto;border:1px solid var(--border);border-radius:16px;padding:12px;background:#0f141d;white-space:pre-wrap;}
+    .chatlog{
+      height:520px;overflow:auto;border:1px solid var(--border);
+      border-radius:16px;padding:12px;background:#0f141d;white-space:pre-wrap;
+    }
     .msg{margin:10px 0}
     .role{font-weight:800;margin-right:8px}
     .role.user{color:#b7d7ff}
     .role.assistant{color:#d8ffbf}
-    textarea{width:100%;min-height:90px;resize:vertical;background:#0f141d;border:1px solid var(--border);border-radius:14px;color:#e9edf3;padding:12px;outline:none;}
-    audio{width:100%;margin-top:10px}
-    .note{border:1px solid var(--border);background:linear-gradient(180deg,#151c2a,#101624);border-radius:14px;padding:10px 12px;color:#c9d2e3;font-size:12px;margin-top:10px;}
-    input{padding:8px 10px;border-radius:12px;border:1px solid var(--border);background:#101622;color:var(--text);outline:none;}
+    textarea{
+      width:100%;min-height:90px;resize:vertical;background:#0f141d;border:1px solid var(--border);
+      border-radius:14px;color:#e9edf3;padding:12px;outline:none;
+    }
+    .note{
+      border:1px solid var(--border);
+      background:linear-gradient(180deg,#151c2a,#101624);
+      border-radius:14px;padding:10px 12px;color:#c9d2e3;font-size:12px;margin-top:10px;
+    }
+    .mutedTiny{color:var(--muted);font-size:12px}
+    .tokenRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .tokenRow input{
+      padding:8px 10px;border-radius:12px;border:1px solid var(--border);
+      background:#101622;color:var(--text);outline:none;min-width:220px;
+    }
   </style>
 </head>
 
@@ -78,26 +121,26 @@
   <!-- LEFT -->
   <div class="card">
     <header>
-      <div class="row" style="gap:8px">
-        <input id="tokenInput" placeholder="Token gir" class="select" />
-        <button class="btn" id="tokenBtn" type="button">Doğrula</button>
-        <button class="btn" id="trBtn" type="button">TR</button>
-        <button class="btn" id="enBtn" type="button">EN</button>
-      </div>
-
       <div class="brand">
         <div class="logo">∞</div>
         <div>
           <div class="title">CAELINUS</div>
-          <div class="sub">Ask SANRI • Consciousness Mirror</div>
+          <div class="sub" id="planSub">Ask SANRI • Consciousness Mirror</div>
         </div>
       </div>
 
-      <select id="gateSource" class="select" title="Kapı kaynağı">
-        <option value="v1">gates_v1 (81 şehir)</option>
-        <option value="v2">gates_v2 (V2 kapılar)</option>
-        <option value="both" selected>both (v1 + v2)</option>
-      </select>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+        <div class="tokenRow">
+          <input id="tokenInput" placeholder="Token gir (opsiyonel)" />
+          <button class="btn" id="tokenBtn" type="button">Doğrula</button>
+        </div>
+
+        <select id="gateSource" class="select" title="Kapı kaynağı">
+          <option value="v1">gates_v1 (81 şehir)</option>
+          <option value="v2">gates_v2 (V2 kapılar)</option>
+          <option value="both" selected>both (v1 + v2)</option>
+        </select>
+      </div>
     </header>
 
     <div class="bar">
@@ -108,6 +151,7 @@
 
     <div class="note">
       <b>Not:</b> SANRI kehanet/teşhis/yargı üretmez. Sembolik anlam ve tek soru ile fark ettirir.
+      <div class="mutedTiny" style="margin-top:6px">Bu panel test içindir. AskSANRI web UI ayrı.</div>
     </div>
 
     <div class="sectionTitle">Kapılar</div>
@@ -142,10 +186,11 @@
       <textarea id="message" placeholder="Mesaj yaz..."></textarea>
       <div class="row" style="margin-top:10px">
         <button class="btn primary" id="sendBtn" type="button">Gönder</button>
-        <button class="btn" id="speakBtn" type="button">Son cevabı oku</button>
         <button class="btn" id="clearBtn" type="button">Temizle</button>
       </div>
-      <audio id="player" controls></audio>
+      <div class="mutedTiny" style="margin-top:10px">
+        API: <span id="apiBaseView"></span>
+      </div>
     </div>
   </div>
 
@@ -153,16 +198,18 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  let SANRI_TOKEN = null;
-  let LANG = "tr";
+  // Railway API (panel her zaman bunu hedefler)
+  const API_BASE = "https://sanri-api-production.up.railway.app";
+  document.getElementById("apiBaseView").textContent = API_BASE;
 
-  const trBtn = document.getElementById("trBtn");
-  const enBtn = document.getElementById("enBtn");
+  // DOM
   const gateSourceSel = document.getElementById("gateSource");
   const gateListEl = document.getElementById("gateList");
   const gateCountEl = document.getElementById("gateCount");
   const statusTextEl = document.getElementById("statusText");
   const activeGateLabelEl = document.getElementById("activeGateLabel");
+  const planSub = document.getElementById("planSub");
+
   const tokenInput = document.getElementById("tokenInput");
   const tokenBtn = document.getElementById("tokenBtn");
 
@@ -183,88 +230,36 @@ document.addEventListener("DOMContentLoaded", () => {
   const chatlog = document.getElementById("chatlog");
   const msgInput = document.getElementById("message");
   const sendBtn = document.getElementById("sendBtn");
-  const speakBtn = document.getElementById("speakBtn");
   const clearBtn = document.getElementById("clearBtn");
-  const player = document.getElementById("player");
 
+  // STATE
+  let SANRI_TOKEN = null;
   let sessionId = "default";
   let lastAssistantText = "";
   let activeGateKey = null;
   let gateLocked = false;
+  let openedOnce = false;
 
   let GATES = {};
   let gateOrder = [];
-  let openedOnce = false;
 
-  function safe(v){ return (v === null || v === undefined) ? "" : String(v); }
-  function formatRules(r){ return Array.isArray(r) ? r.filter(Boolean).map(String).join(" | ") : safe(r); }
-
-  function setStatus(t){
-    if(!statusTextEl) return;
-    statusTextEl.textContent = t || "Hazır";
-  }
-
-  function setLang(l){
-    LANG = l;
-    trBtn.classList.toggle("primary", l==="tr");
-    enBtn.classList.toggle("primary", l==="en");
-    setStatus("Dil: " + l.toUpperCase());
-  }
-
- tokenBtn.addEventListener("click", async () => {
-  const t = (tokenInput.value || "").trim();
-  SANRI_TOKEN = t || null;
-
-  if(!SANRI_TOKEN){
-    setStatus("Guest mod");
-    document.querySelector(".sub").textContent = "Ask SANRI • Consciousness Mirror";
-    return;
-  }
-
-  setStatus("Token doğrulanıyor...");
-
-  try{
-    const res = await fetch("/auth/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: SANRI_TOKEN })
-    });
-
-    if(!res.ok){
-      const msg = await res.text();
-      console.log("VERIFY FAIL:", res.status, msg);
-      setStatus("Token geçersiz");
-      return;
-    }
-
-    const data = await res.json();
-    setStatus("Plan: " + (data.label || data.plan || "OK"));
-    document.querySelector(".sub").textContent = "Plan: " + (data.label || data.plan || "OK");
-
-  }catch(e){
-    console.log("VERIFY EX:", e);
-    setStatus("Token doğrulanamadı");
-  }
-});
-  trBtn.addEventListener("click", ()=>setLang("tr"));
-  enBtn.addEventListener("click", ()=>setLang("en"));
+  // helpers
+  const safe = (v)=> (v===null||v===undefined) ? "" : String(v);
+  const formatRules = (r)=> Array.isArray(r) ? r.filter(Boolean).map(String).join(" | ") : safe(r);
+  const setStatus = (t)=> { statusTextEl.textContent = t || "Hazır"; };
 
   function addLine(role, text){
     const div = document.createElement("div");
     div.className = "msg";
-
     const r = document.createElement("span");
     r.className = "role " + (role === "assistant" ? "assistant" : "user");
     r.textContent = role + ":";
-
     const t = document.createElement("span");
     t.textContent = " " + (text ?? "");
-
     div.appendChild(r);
     div.appendChild(t);
     chatlog.appendChild(div);
     chatlog.scrollTop = chatlog.scrollHeight;
-
     if(role === "assistant") lastAssistantText = text || "";
   }
 
@@ -291,7 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function setActiveLabel(){
     if(!activeGateKey){ activeGateLabelEl.textContent="Yok"; return; }
     const g = GATES[activeGateKey];
-    const isV2 = activeGateKey.startsWith("v2_");
+    const isV2 = String(activeGateKey).startsWith("v2_");
     const layer = isV2 ? "✨ V2" : "• V1";
     const tag = safe(g?.plaka || activeGateKey);
     const name = safe(g?.sehir || g?.city || g?.baslik || g?.title || "");
@@ -303,7 +298,7 @@ document.addEventListener("DOMContentLoaded", () => {
     gateOrder.forEach(k=>{
       const g = GATES[k];
       const btn = document.createElement("button");
-      btn.className = "gateBtn " + (k.startsWith("v2_") ? "gate-v2" : "gate-v1");
+      btn.className = "gateBtn " + (String(k).startsWith("v2_") ? "gate-v2" : "gate-v1");
       const left = safe(g.plaka || k);
       const right = safe(g.sehir || g.city || g.baslik || g.title || "");
       btn.textContent = left + (right ? (" " + right) : "");
@@ -315,10 +310,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function openGate(k){
-if(k.startsWith("v2_") && !SANRI_TOKEN && k !== "v2_0"){
- setStatus("✨ Bu kapı için bir anahtar gerekir");
-  return;
-}
     activeGateKey = String(k);
     gateLocked = false;
 
@@ -370,122 +361,13 @@ if(k.startsWith("v2_") && !SANRI_TOKEN && k !== "v2_0"){
     return parts.join("\n");
   }
 
-  async function sendChat(){
-    const message = msgInput.value.trim();
-    if(!message) return;
-
-    addLine("user", message);
-    msgInput.value = "";
-
-    sendBtn.disabled = true;
-    speakBtn.disabled = true;
-
-    try{
-      setStatus("Yazıyor...");
-      let finalMessage = message;
-      let domain = null;
-
-      if(activeGateKey && gateLocked){
-        const g = GATES[activeGateKey];
-        finalMessage = buildGatePrompt(g) + "\nKULLANICI:\n" + message;
-        domain = String(activeGateKey);
-      }
-
-      const headers = {
-        "Content-Type": "application/json",
-        ...(SANRI_TOKEN ? { "x-sanri-token": SANRI_TOKEN } : {})
-      };
-
-      const res = await fetch("/bilinc-alani/ask", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          message: finalMessage,
-          session_id: sessionId ?? "default",
-          domain: domain,
-          lang: LANG
-        })
-      });
-
-      if(!res.ok){
-        const t = await res.text();
-        addLine("assistant", "SERVER ERROR → " + t);
-        setStatus("Hata");
-        return;
-      }
-
-      const data = await res.json();
-      sessionId = data.session_id || sessionId;
-
-      const reply = data.response || data.reply || "";
-      addLine("assistant", reply);
-      setStatus("Hazır");
-
-    }catch(e){
-      addLine("assistant", "HATA → " + String(e));
-      setStatus("Hata");
-    }finally{
-      sendBtn.disabled = false;
-      speakBtn.disabled = false;
-    }
-  }
-
-  async function playSanriVoice(text){
-    if(!text) return;
-    try{
-      setStatus("Ses hazırlanıyor...");
-      const res = await fetch("/sanri_voice/speak", {
-        method:"POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ text, voice:"alloy" })
-      });
-
-      if(!res.ok){
-        const t = await res.text();
-        setStatus("Ses alınamadı: " + t);
-        return;
-      }
-
-      const blob = await res.blob();
-      player.src = URL.createObjectURL(blob);
-      player.load();
-      await player.play();
-      setStatus("Ses çalıyor");
-    }catch(err){
-      console.warn("Audio play error:", err);
-      setStatus("Tarayıcı sesi engelledi. Tekrar dene.");
-    }
-  }
-
-  async function speakLastAssistant(){
-    const last = Array.from(chatlog.querySelectorAll(".msg .role.assistant")).length ? lastAssistantText : lastAssistantText;
-    if(!last){ setStatus("Önce bir cevap alın."); return; }
-    await playSanriVoice(last);
-  }
-
-  async function readGateMantra(){
-    if(!activeGateKey){ setStatus("Önce kapı seç."); return; }
-    const g = GATES[activeGateKey];
-    const mantra = safe(g?.mantra || "");
-    if(!mantra){ setStatus("Bu kapıda mantra boş."); return; }
-    await playSanriVoice(mantra);
-  }
-
-  function clearChat(){
-    chatlog.innerHTML = "";
-    lastAssistantText = "";
-    sessionId = "default";
-    setStatus("Temizlendi");
-  }
-
   async function fetchJson(path){
-    const r = await fetch(path);
+    const r = await fetch(API_BASE + path, { cache: "no-store" });
     if(!r.ok) throw new Error(path + " → " + r.status);
     return r.json();
   }
 
   function normalizeV2Map(v2){
-    // gates_v2.json zaten v2_ key’leriyle geldiyse aynen bırak
     const out = {};
     Object.keys(v2||{}).forEach(k=>{
       const kk = String(k);
@@ -502,32 +384,21 @@ if(k.startsWith("v2_") && !SANRI_TOKEN && k !== "v2_0"){
   }
 
   async function loadGates(){
-if(!openedOnce){
-  openedOnce = true;
+    if(!openedOnce){
+      openedOnce = true;
+      addLine("assistant",
+        "Bu bir cevap alanı değil.\n" +
+        "Bu, kendinle karşılaştığın yer.\n" +
+        "Hazır mısın?"
+      );
+    }
 
-  const now = new Date();
-  const isFeb14 = (now.getMonth() === 1 && now.getDate() === 14); // Aylar 0-index: 1 = Şubat
-
-  if(isFeb14){
-    addLine("assistant",
-      "14 Şubat.\n" +
-      "Aşk sorulmaz.\n" +
-      "Hatırlanır.\n" +
-      "Eşik kapısı açık. v2_0 ile başla."
-    );
-  } else {
-    addLine("assistant",
-      "Bu bir cevap alanı değil.\n" +
-      "Bu, kendinle karşılaştığın yer.\n" +
-      "Hazır mısın?"
-    );
-  }
-}
     setStatus("Kapılar yükleniyor...");
     try{
       const source = gateSourceSel.value;
       let v1 = {}, v2 = {};
 
+      // /static/prompts/... FastAPI mount
       if(source === "v1" || source === "both"){
         const j1 = await fetchJson("/static/prompts/gates_v1.json");
         v1 = j1?.gates || {};
@@ -537,13 +408,9 @@ if(!openedOnce){
         v2 = normalizeV2Map(j2?.gates || {});
       }
 
-      if(source === "v1"){
-        GATES = v1;
-      } else if(source === "v2"){
-        GATES = v2;
-      } else {
-        GATES = mergeMaps(v1, v2);
-      }
+      if(source === "v1") GATES = v1;
+      else if(source === "v2") GATES = v2;
+      else GATES = mergeMaps(v1, v2);
 
       gateOrder = Object.keys(GATES).sort((a,b)=>{
         const strip = (x)=>String(x).startsWith("v2_") ? String(x).slice(3) : String(x);
@@ -556,25 +423,107 @@ if(!openedOnce){
       closeGate();
       renderGates();
       setStatus("Hazır");
-
-      if(!openedOnce){
-        openedOnce = true;
-        addLine("assistant", "Bu bir cevap alanı değil.\nBu, kendinle karşılaştığın yer.\nHazır mısın?");
-      }
+      planSub.textContent = "Ask SANRI • Consciousness Mirror";
 
     }catch(err){
-      console.log("Kapılar yüklenemedi:", err);
       setStatus("Kapılar yüklenemedi");
+      addLine("assistant", "Kapılar yüklenemedi. API /static/prompts/... yolunu kontrol et.");
+      // log'u sakince yazalım (kırmızı işaret olmasın diye console.error kullanmıyoruz)
+      console.log("Kapılar yüklenemedi:", err);
     }
   }
 
+  async function sendChat(){
+    const message = msgInput.value.trim();
+    if(!message) return;
+
+    addLine("user", message);
+    msgInput.value = "";
+
+    sendBtn.disabled = true;
+
+    try{
+      setStatus("Yazıyor...");
+
+      let finalMessage = message;
+      let domain = null;
+
+      if(activeGateKey && gateLocked){
+        const g = GATES[activeGateKey];
+        finalMessage = buildGatePrompt(g) + "\nKULLANICI:\n" + message;
+        domain = String(activeGateKey);
+      }
+
+      const res = await fetch(API_BASE + "/bilinc-alani/ask", {
+        method: "POST",
+        headers: {
+body: JSON.stringify({
+  message: finalMessage,
+  session_id: sessionId ?? "default",
+  domain: domain,
+  mode: "test"   // ✅ PANEL TESTTE DERİN
+})
+          "Content-Type": "application/json",
+          ...(SANRI_TOKEN ? { "x-sanri-token": SANRI_TOKEN } : {})
+        },
+        body: JSON.stringify({
+  message: finalMessage,
+  session_id: sessionId ?? "default",
+  domain: domain,
+  mode: "beden_aynasi"
+})
+      });
+
+      if(!res.ok){
+        const t = await res.text();
+        addLine("assistant", "SERVER ERROR → " + t);
+        setStatus("Hata");
+        return;
+      }
+
+      const data = await res.json();
+      const reply = data.answer || data.response || data.reply || "";
+      addLine("assistant", reply);
+      setStatus("Hazır");
+
+      // session dönüyorsa güncelle
+      if(data.session_id) sessionId = data.session_id;
+
+    }catch(e){
+      addLine("assistant", "HATA → " + (e?.message || String(e)));
+      setStatus("Hata");
+    }finally{
+      sendBtn.disabled = false;
+    }
+  }
+
+  function clearChat(){
+    chatlog.innerHTML = "";
+    lastAssistantText = "";
+    setStatus("Temizlendi");
+  }
+
+  // Token doğrula (şimdilik sadece “aktif/pasif”)
+  tokenBtn.addEventListener("click", ()=>{
+    SANRI_TOKEN = (tokenInput.value || "").trim() || null;
+    setStatus(SANRI_TOKEN ? "Token aktif" : "Guest mod");
+    // Plan label istersen: planSub.textContent = "Plan: Initiate" gibi
+  });
+
+  // Events
   gateSourceSel.addEventListener("change", loadGates);
   lockBtn.addEventListener("click", lockGate);
-  readMantraBtn.addEventListener("click", readGateMantra);
   closeGateBtn.addEventListener("click", closeGate);
 
+  readMantraBtn.addEventListener("click", ()=>{
+    if(!activeGateKey){ setStatus("Önce kapı seç."); return; }
+    const g = GATES[activeGateKey];
+    const mantra = safe(g?.mantra || "");
+    if(!mantra){ setStatus("Bu kapıda mantra boş."); return; }
+    addLine("assistant", "MANTRA:\n" + mantra);
+  });
+
   sendBtn.addEventListener("click", sendChat);
-  speakBtn.addEventListener("click", speakLastAssistant);
   clearBtn.addEventListener("click", clearChat);
 
   msgInput.addEventListener("keydown", (e)=>{
@@ -584,7 +533,9 @@ if(!openedOnce){
     }
   });
 
-  setLang("tr");
+  // init
+  clearCard();
+  setActiveLabel();
   loadGates();
 });
 </script>

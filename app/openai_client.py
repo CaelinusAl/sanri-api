@@ -1,22 +1,10 @@
-import os
 from openai import OpenAI
-
+import os
 
 _client = None
 
-
-def get_client() -> OpenAI:
+def get_client():
     global _client
     if _client is None:
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY eksik")
-        _client = OpenAI(api_key=api_key)
+        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     return _client
-
-
-def get_model() -> str:
-    model = os.getenv("OPENAI_MODEL", "").strip()
-    if not model:
-        model = "gpt-4o-mini"
-    return model
