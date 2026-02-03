@@ -4,9 +4,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from openai import OpenAI
 
-from app.prompts.matrix_prompt import MATRIX_PROMPT
-
-router = APIRouter(prefix="/matrix-alani", tags=["matrix-alani"])
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
