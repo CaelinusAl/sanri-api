@@ -457,18 +457,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const res = await fetch(API_BASE + "/bilinc-alani/ask", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(SANRI_TOKEN ? { "x-sanri-token": SANRI_TOKEN } : {})
-      },
-      body: JSON.stringify({
-        message: finalMessage,
-        session_id: sessionId ?? "default",
-        domain: domain,
-        mode: "test"   // derin mod
-      })
-    });
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    message: finalMessage,
+    session_id: sessionId ?? "default",
+    domain: domain,
+    mode: "test"
+  })
+});
 
     if(!res.ok){
       const t = await res.text();

@@ -1,5 +1,4 @@
 # app/routes/bilinc_alani.py
-
 import os
 from typing import Optional
 
@@ -8,72 +7,63 @@ from pydantic import BaseModel
 from openai import OpenAI
 
 from app.routes.memory import get_memory, add_message
-
-
+from app.prompts.system_base import build_system_prompt
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
-MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4.1 mini")
+MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
 
 def get_client() -> OpenAI:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing")
     return OpenAI(api_key=api_key)
-
 
 class AskRequest(BaseModel):
     message: Optional[str] = None
     question: Optional[str] = None
     session_id: Optional[str] = "default"
-    mode: Optional[str] = "user"
+    domain: Optional[str] = None
+    mode: Optional[str] = "user"  # user | test | cocuk
 
     def text(self) -> str:
         return (self.message or self.question or "").strip()
 
-
 class AskResponse(BaseModel):
     response: str
     session_id: str
-    mode: str
-
 
 @router.post("/ask", response_model=AskResponse)
-def ask(req: AskRequest):
+def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
+    # (şimdilik token/gate kontrolü yok — ayağa kalkınca ekleriz)
+
     user_text = req.text()
+    session_id = (req.session_id or "default").strip()
+
     if not user_text:
-        return AskResponse(response="", session_id=req.session_id, mode=req.mode)
+        return AskResponse(response="", session_id=session_id)
 
-    
-    history = get_memory(req.session_id) or []
+    system_prompt = build_system_prompt(req.mode)
 
-
+    history = get_memory(session_id) or []
+    messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_text})
 
     client = get_client()
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=float(os.getenv("SANRI_TEMPERATURE", "0.4")),
+            max_tokens=int(os.getenv("SANRI_MAX_TOKENS", "300")),
+        )
+        reply = (completion.choices[0].message.content or "").strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    completion = client.chat.completions.create(
-    model=MODEL_NAME,
-    messages=[
-      
-        *history,
-        {"role": "user", "content": user_text},
-    ],
-    temperature=0.15,
-    max_tokens=180,
-    presence_penalty=0.0,
-    frequency_penalty=0.0,
-)
-
-    reply = completion.choices[0].message.content.strip()
     if not reply:
         reply = "Buradayım."
 
-    add_message(req.session_id, user_text, reply)
-
-    return AskResponse(
-        response=reply,
-        session_id=req.session_id,
-        mode=req.mode
-    )
+    add_message(session_id, user_text, reply)
+    return AskResponse(response=reply, session_id=session_id)
