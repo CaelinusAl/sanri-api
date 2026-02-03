@@ -12,8 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.routes.bilinc_alani import router as bilinc_router
-from app.routes.matrix_alani import router as matrix_router
-from app.routes.rituel_alani import router as rituel_router
+#from app.routes.rituel_alani import router as rituel_router
 from app.routes.sanri_voice import router as voice_router
 from app.routes.membership import router as membership_router
 from pydantic import BaseModel   
@@ -27,8 +26,7 @@ app = FastAPI(title="SANRI API")
 
 # ROUTERS
 app.include_router(bilinc_router)
-app.include_router(matrix_router)
-app.include_router(rituel_router)
+#app.include_router(rituel_router)
 app.include_router(voice_router)
 
 app = FastAPI(title="SANRI API")
