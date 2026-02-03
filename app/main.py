@@ -71,6 +71,11 @@ if not STATIC_DIR.exists():
     STATIC_DIR = Path.cwd() / "static"
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory="app/static"),
+    name="static"
+)
 
 # ---------- GLOBAL EXCEPTION HANDLERS ----------
 @app.exception_handler(Exception)

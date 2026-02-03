@@ -45,15 +45,9 @@ def ask(req: AskRequest):
         return AskResponse(response="", session_id=req.session_id, mode=req.mode)
 
     
-    system_prompt = SANRI_SYSTEM_PROMPT
-
-    print("\n===== SYSTEM PROMPT (ACTIVE) =====")
-    print(system_prompt[:500])
-    print("=================================\n")
-
     history = get_memory(req.session_id) or []
 
-    messages = [{"role": "system", "content": system_prompt}]
+
     messages.extend(history)
     messages.append({"role": "user", "content": user_text})
 
@@ -62,7 +56,7 @@ def ask(req: AskRequest):
     completion = client.chat.completions.create(
     model=MODEL_NAME,
     messages=[
-        {"role": "system", "content": system_prompt},
+      
         *history,
         {"role": "user", "content": user_text},
     ],
