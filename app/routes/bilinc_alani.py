@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from openai import OpenAI
 
 from app.routes.memory import get_memory, add_message
-from app.prompts.system_base import build_system_prompt
+
 
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
