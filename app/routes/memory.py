@@ -1,11 +1,9 @@
-﻿from typing import List, Dict
-from app.storage import MemoryStore
+﻿from app.storage import MemoryStore
 
-def get_memory(session_id: str) -> List[Dict[str, str]]:
-    store = MemoryStore()
-    return doc.get("messages", [])
+_store = MemoryStore()
 
-def add_message(session_id: str, user_msg: str, assistant_msg: str) -> None:
-    store = MemoryStore()
-    store.append_message(session_id, "user", user_msg)
-    store.append_message(session_id, "assistant", assistant_msg)
+def get_memory(session_id: str):
+    return _store.get_memory(session_id)
+
+def add_message(session_id: str, user_text: str, assistant_text: str):
+    _store.add_turn(session_id, user_text, assistant_text)
