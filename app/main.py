@@ -24,7 +24,7 @@ app.add_middleware(
 )
 
 # Static mount (panel + prompts)
-STATIC_DIR = Path(_file_).resolve().parent / "static"   # app/static
+STATIC_DIR = Path(__file__).resolve().parent / "static"   # app/static
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Routers
