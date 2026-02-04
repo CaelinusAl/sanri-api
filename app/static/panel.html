@@ -459,7 +459,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const res = await fetch(API_BASE + "/bilinc-alani/ask", {
       method: "POST",
-      headers,
+      headers: headers,
       body: JSON.stringify({
         message: finalMessage,
         session_id: sessionId || "default",
@@ -489,7 +489,6 @@ document.addEventListener("DOMContentLoaded", () => {
     sendBtn.disabled = false;
   }
 }
-
   function clearChat(){
     chatlog.innerHTML = "";
     setStatus("Temizlendi");
