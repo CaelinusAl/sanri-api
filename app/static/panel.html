@@ -201,7 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ✅ SAME-ORIGIN: Panel hangi domainden açıldıysa API de orası
   // Böylece CORS bitiyor.
-  const API_BASE = window.location.origin;
+  const API_BASE = const API_BASE = "https://sanri-api-production-815e.up.railway.app";
   document.getElementById("apiBaseView").textContent = API_BASE;
 
   // DOM
@@ -465,7 +465,7 @@ document.addEventListener("DOMContentLoaded", () => {
           message: finalMessage,
           session_id: sessionId || "default",
           domain: domain,
-          mode: "test"  // panel testte derin
+          mode: "user"  //
         })
       });
 
