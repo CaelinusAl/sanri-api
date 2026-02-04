@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 
 from app.routes.bilinc_alani import router as bilinc_router
 from app.routes.sanri_voice import router as voice_router
-from app.routes.content import router as content_router
+# from app.routes.content import router as content_router
 load_dotenv()
 
 app = FastAPI(title="SANRI API")
@@ -34,7 +34,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # Routers
 app.include_router(bilinc_router)
 app.include_router(voice_router)
-app.include_router(content_router)
+# app.include_router(content_router)
 
 
 
