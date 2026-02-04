@@ -198,8 +198,10 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  // Railway API (panel her zaman bunu hedefler)
-  const API_BASE = "https://sanri-api-production.up.railway.app";
+
+  // ✅ SAME-ORIGIN: Panel hangi domainden açıldıysa API de orası
+  // Böylece CORS bitiyor.
+  const API_BASE = window.location.origin;
   document.getElementById("apiBaseView").textContent = API_BASE;
 
   // DOM
@@ -235,7 +237,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // STATE
   let SANRI_TOKEN = null;
   let sessionId = "default";
-  let lastAssistantText = "";
   let activeGateKey = null;
   let gateLocked = false;
   let openedOnce = false;
@@ -251,16 +252,18 @@ document.addEventListener("DOMContentLoaded", () => {
   function addLine(role, text){
     const div = document.createElement("div");
     div.className = "msg";
+
     const r = document.createElement("span");
     r.className = "role " + (role === "assistant" ? "assistant" : "user");
     r.textContent = role + ":";
+
     const t = document.createElement("span");
     t.textContent = " " + (text ?? "");
+
     div.appendChild(r);
     div.appendChild(t);
     chatlog.appendChild(div);
     chatlog.scrollTop = chatlog.scrollHeight;
-    if(role === "assistant") lastAssistantText = text || "";
   }
 
   function clearCard(){
@@ -362,7 +365,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function fetchJson(path){
-    const r = await fetch(API_BASE + path, { cache: "no-store" });
+    // ✅ same-origin
+    const r = await fetch(path, { cache: "no-store" });
     if(!r.ok) throw new Error(path + " → " + r.status);
     return r.json();
   }
@@ -398,7 +402,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const source = gateSourceSel.value;
       let v1 = {}, v2 = {};
 
-      // /static/prompts/... FastAPI mount
       if(source === "v1" || source === "both"){
         const j1 = await fetchJson("/static/prompts/gates_v1.json");
         v1 = j1?.gates || {};
@@ -427,89 +430,77 @@ document.addEventListener("DOMContentLoaded", () => {
 
     }catch(err){
       setStatus("Kapılar yüklenemedi");
-      addLine("assistant", "Kapılar yüklenemedi. API /static/prompts/... yolunu kontrol et.");
-      // log'u sakince yazalım (kırmızı işaret olmasın diye console.error kullanmıyoruz)
+      addLine("assistant", "Kapılar yüklenemedi. /static/prompts/... yolunu kontrol et.");
       console.log("Kapılar yüklenemedi:", err);
     }
   }
 
   async function sendChat(){
-  const message = msgInput.value.trim();
-  if(!message) return;
+    const message = msgInput.value.trim();
+    if(!message) return;
 
-  addLine("user", message);
-  msgInput.value = "";
-  sendBtn.disabled = true;
+    addLine("user", message);
+    msgInput.value = "";
+    sendBtn.disabled = true;
 
-  try{
-    setStatus("Yazıyor...");
+    try{
+      setStatus("Yazıyor...");
 
-    let finalMessage = message;
-    let domain = null;
+      let finalMessage = message;
+      let domain = null;
 
-    if(activeGateKey && gateLocked){
-      const g = GATES[activeGateKey];
-      finalMessage =
-        buildGatePrompt(g) +
-        "\nKULLANICI:\n" +
-        message;
-      domain = String(activeGateKey);
-    }
+      if(activeGateKey && gateLocked){
+        const g = GATES[activeGateKey];
+        finalMessage = buildGatePrompt(g) + "\nKULLANICI:\n" + message;
+        domain = String(activeGateKey);
+      }
 
-    const res = await fetch(API_BASE + "/bilinc-alani/ask", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    message: finalMessage,
-    session_id: sessionId ?? "default",
-    domain: domain,
-    mode: "test"
-  })
-});
+      const headers = { "Content-Type": "application/json" };
+      if(SANRI_TOKEN) headers["x-sanri-token"] = SANRI_TOKEN;
 
-    if(!res.ok){
-      const t = await res.text();
-      addLine("assistant", "SERVER ERROR → " + t);
+      const res = await fetch(API_BASE + "/bilinc-alani/ask", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          message: finalMessage,
+          session_id: sessionId || "default",
+          domain: domain,
+          mode: "test"  // panel testte derin
+        })
+      });
+
+      if(!res.ok){
+        const t = await res.text();
+        addLine("assistant", "SERVER ERROR → " + t);
+        setStatus("Hata");
+        return;
+      }
+
+      const data = await res.json();
+      const reply = data.response || data.answer || data.reply || "";
+      addLine("assistant", reply || "Buradayım.");
+      setStatus("Hazır");
+
+      if(data.session_id) sessionId = data.session_id;
+
+    }catch(e){
+      addLine("assistant", "HATA → " + (e?.message || String(e)));
       setStatus("Hata");
-      return;
+    }finally{
+      sendBtn.disabled = false;
     }
-
-    const data = await res.json();
-    const reply =
-      data.response ||
-      data.answer ||
-      data.reply ||
-      "";
-
-    addLine("assistant", reply || "Buradayım.");
-    setStatus("Hazır");
-
-    if(data.session_id){
-      sessionId = data.session_id;
-    }
-
-  }catch(e){
-    addLine("assistant", "HATA → " + (e?.message || String(e)));
-    setStatus("Hata");
-  }finally{
-    sendBtn.disabled = false;
   }
-}
 
   function clearChat(){
     chatlog.innerHTML = "";
-    lastAssistantText = "";
     setStatus("Temizlendi");
   }
 
-  // Token doğrula (şimdilik sadece “aktif/pasif”)
   tokenBtn.addEventListener("click", ()=>{
     SANRI_TOKEN = (tokenInput.value || "").trim() || null;
     setStatus(SANRI_TOKEN ? "Token aktif" : "Guest mod");
-    // Plan label istersen: planSub.textContent = "Plan: Initiate" gibi
   });
 
-  // Events
   gateSourceSel.addEventListener("change", loadGates);
   lockBtn.addEventListener("click", lockGate);
   closeGateBtn.addEventListener("click", closeGate);
@@ -538,6 +529,3 @@ document.addEventListener("DOMContentLoaded", () => {
   loadGates();
 });
 </script>
-
-</body>
-</html>
