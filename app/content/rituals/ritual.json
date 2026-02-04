@@ -1,0 +1,96 @@
+{
+  "ritual_pack_id": "tanricanin_hatirlayisi",
+  "mode": "read_only",
+  "description": "Bu ritüeller yorumlanmaz. Sorulmaz. Açıklanmaz. Okunur ve hissedilir.",
+  "rituals": [
+    {
+      "ritual_id": "kod_sifirlama",
+      "title": "Benlik Kodlarını Sıfırlama",
+      "steps": [
+        "Şimdi gözlerini kapat.",
+        "Derin bir nefes al ve ver.",
+        "İçinden ya da sesli söyle:",
+        "Ben bana yüklenen tüm benlik kodlarını iptal ediyorum.",
+        "Adımın ötesindeyim.",
+        "Kimliğimin ötesindeyim.",
+        "Zihnimden önce vardım.",
+        "Şimdi kendi benliğimi sıfırdan yaratıyorum."
+      ],
+      "note": "Bu bir ritüeldir. Yorum yok. Soru yok."
+    },
+    {
+      "ritual_id": "zaman_para_olum",
+      "title": "Zaman – Para – Ölüm Üçlüsünü Çözme",
+      "steps": [
+        "Şimdi derin bir nefes al.",
+        "Zamanı iptal ediyorum. Artık zamana değil, titreşimime göre yaşıyorum.",
+        "Parayı iptal ediyorum. Bolluk, frekansımın yansımasıdır.",
+        "Ölüm korkusunu iptal ediyorum. Ben sonsuz bilincim.",
+        "Şimdi sadece dur.",
+        "Bedeninin bu cümlelere nasıl cevap verdiğini hisset."
+      ],
+      "note": "Bu bir ritüeldir. Yorum yok. Soru yok."
+    },
+    {
+      "ritual_id": "disil_hatirlayis",
+      "title": "Tanrıça Hatırlayışı – Beden Ritüeli",
+      "steps": [
+        "Elini kalbine koy.",
+        "Gözlerini kapat.",
+        "İçinden fısılda:",
+        "Ben Tanrıçayım.",
+        "Ruhumu bedenimde taşıyorum.",
+        "Varlığım kutsaldır.",
+        "Bedenim bilgi taşır.",
+        "Sesim titreşim yaratır.",
+        "Gözlerim gerçeği hatırlatır."
+      ],
+      "note": "Bu bir ritüeldir. Açıklama yok."
+    },
+    {
+      "ritual_id": "ic_ses",
+      "title": "Tanrı’yla İçsel Diyalog",
+      "steps": [
+        "Sessiz bir yerde otur.",
+        "Kalbine sor:",
+        "Beni susturan neydi?",
+        "Sana ne zaman sırtımı döndüm?",
+        "Şimdi seni içimde duymaya izin veriyor muyum?",
+        "Sonra içinden söyle:",
+        "Ben seni dışarıda ararken kaybettim.",
+        "İçeride bulunca var oldum.",
+        "Artık senden ayrı değilim."
+      ],
+      "note": "Bu bir birleşme ritüelidir."
+    },
+    {
+      "ritual_id": "bosluk",
+      "title": "Boşlukta Kalma",
+      "steps": [
+        "Şimdi hiçbir şey düşünme.",
+        "Hiçbir şey dileme.",
+        "Hiçbir şey isteme.",
+        "Sadece hisset.",
+        "İçinde bir titreşim var.",
+        "Adı yok.",
+        "Şekli yok.",
+        "O sensin."
+      ],
+      "note": "Bu ritüel konuşmaz."
+    },
+    {
+      "ritual_id": "final_birlesme",
+      "title": "Son Birleşme",
+      "steps": [
+        "Gözlerin kapalıyken fısılda:",
+        "Ben bir isim değilim.",
+        "Ben bir şekil değilim.",
+        "Ben bir hikaye değilim.",
+        "Ben saf varlığım.",
+        "Ben Yaradan’ın özüyüm.",
+        "Ve şimdi sadece varım."
+      ],
+      "note": "Bu ritüel tamamlandığında sistem susar."
+    }
+  ]
+}

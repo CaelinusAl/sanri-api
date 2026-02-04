@@ -1,0 +1,129 @@
+{
+  "book_id": 112,
+  "title": "Tanrıçanın Hatırlayışı",
+  "subtitle": "Unutulanların Hatırlama Rehberi",
+  "mode": "read_only",
+  "intro": [
+    "Bu kitap bir bilgi taşımaz.",
+    "Bu kitap, senin içindeki bilgiyi uyandırır.",
+    "Eğer bu satırları okuyorsan, hatırlama zamanı gelmiştir."
+  ],
+  "sections": [
+    {
+      "gate": 1,
+      "title": "Zihnin Oyunu",
+      "frequency_sentences": [
+        "Gerçeğin korkutucu olmasının sebebi, seni özgürleştirmesidir."
+      ],
+      "content": [
+        "Zihin sana gerçeği anlatmadı.",
+        "Zihin sana kabul edilebilir olanı anlattı.",
+        "İyi dediler itaat edene.",
+        "Başarılı dediler uyum sağlayana.",
+        "Ve sen fark etmeden şunu öğrendin: Ben olduğum halimle yeterli değilim.",
+        "Bu sistemin ilk ve en güçlü kodudur.",
+        "Çünkü kendini eksik hisseden biri, yaratım gücünü başkasına devreder."
+      ]
+    },
+    {
+      "gate": 2,
+      "title": "Zaman – Para – Ölüm Üçgeni",
+      "frequency_sentences": [
+        "Zaman senin titreşimindir.",
+        "Para bir sonuçtur.",
+        "Ölüm bir kapıdır."
+      ],
+      "content": [
+        "Zamanı sana bir çizgi olarak öğrettiler.",
+        "Ama zaman bir çizgi değildir, bir titreşimdir.",
+        "Ne zaman hazırım dersen, zaman orada başlar.",
+        "Para modern Tanrı yapıldı.",
+        "Çünkü gerçek Tanrı içerideydi.",
+        "Ölümden korkan zihin sisteme itaat eder.",
+        "Ama ölüm bitiş değil, geçiştir."
+      ]
+    },
+    {
+      "gate": 3,
+      "title": "Kendini Yaratan",
+      "frequency_sentences": [
+        "Gerçeklik senin titreşiminin yansımasıdır."
+      ],
+      "content": [
+        "Her şey bir soruyla başlar: Ben neye inanıyorum?",
+        "İnançlarının çoğu sana ait değildir.",
+        "Gerçeklik bir ekrandır.",
+        "Sen izleyici değilsin.",
+        "Sen senaristsin.",
+        "Sen yazmadığında, başkası yazar."
+      ]
+    },
+    {
+      "gate": 4,
+      "title": "Dişilin Geri Dönüşü",
+      "frequency_sentences": [
+        "Güzellik bir dekor değil, portaldır."
+      ],
+      "content": [
+        "Dişil enerji bir isim değil, bir frekanstır.",
+        "Yaratandır, akandır, sezgidir.",
+        "Yüzyıllar boyunca bastırıldı.",
+        "Çünkü dişil uyanırsa sistem çözülür.",
+        "Tanrıça savaşmaz.",
+        "O sadece gelir."
+      ]
+    },
+    {
+      "gate": 5,
+      "title": "Tanrı İçeriden Konuşur",
+      "frequency_sentences": [
+        "Tanrı dışarıdan değil, içeriden konuşur."
+      ],
+      "content": [
+        "Tanrı gökyüzünde değil.",
+        "Tanrı bedenindedir.",
+        "Her hücrende yaşar.",
+        "Tanrı seninle konuşur.",
+        "Ama senin sesinle.",
+        "Bazen kelimeyle değil, duyguyla."
+      ]
+    },
+    {
+      "gate": 6,
+      "title": "Uyanıştan Sonra",
+      "frequency_sentences": [
+        "Gerçek anlatılmaz, yaşanır."
+      ],
+      "content": [
+        "Uyanış bir ödül değildir.",
+        "Bir yıkımdır.",
+        "Kimlikler çöker.",
+        "Yalnızlık gelir.",
+        "Ama bu bir kriz değil, doğumdur.",
+        "Uyanmış kişi sessizdir."
+      ]
+    },
+    {
+      "gate": 7,
+      "title": "Boşluk ve Birleşme",
+      "type": "final_gate",
+      "frequency_sentences": [
+        "Boşluk her şeyin kaynağıdır."
+      ],
+      "content": [
+        "Her şey sustuğunda geriye BEN kalır.",
+        "Boşluk karanlık değildir.",
+        "Boşluk özgürlüktür.",
+        "Tanrı ayrı değildir.",
+        "Sen dua etmiyorsun.",
+        "Sen duanın kendisisin."
+      ]
+    }
+  ],
+  "final_message": [
+    "Bu kitap burada bitmez.",
+    "Burada başlar.",
+    "Şimdi kalem sende.",
+    "Tanrı da senin içinden yazıyor."
+  ]
+}

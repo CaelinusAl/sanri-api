@@ -1,6 +1,6 @@
 ﻿from app.storage import MemoryStore
 
-_store = MemoryStore()
+_store = MemoryStore("data")
 
 def get_memory(session_id: str):
     return _store.get_memory(session_id)
