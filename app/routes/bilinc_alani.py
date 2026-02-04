@@ -43,19 +43,21 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
 
     system_prompt = build_system_prompt(req.mode)
 
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text},
+    ]
+
     client = OpenAI()
 
     try:
-        completion = client.responses.create(
+        completion = client.chat.completions.create(
             model=MODEL_NAME,
-            input=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text},
-            ],
+            messages=messages,
+            temperature=0.4,
+            max_tokens=300,
         )
-
-        reply = completion.output_text
-
+        reply = completion.choices[0].message.content
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
