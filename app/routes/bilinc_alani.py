@@ -30,12 +30,13 @@ class AskRequest(BaseModel):
 
 class AskResponse(BaseModel):
     response: str
+    session_id: str | None = None
 
 @router.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
 
-    user_text = req.text()
-    session_id = (req.session_id or "default").strip()
+    user_text = (getattr(req, "message", None) or getattr(req, "question", None) or "").strip()
+    session_id = (getattr(req, "session_id", None) or "default").strip()
 
     if not user_text:
         return AskResponse(response="", session_id=session_id)
