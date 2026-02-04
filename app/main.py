@@ -2,41 +2,37 @@
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 
 from app.routes.bilinc_alani import router as bilinc_router
-from app.routes.sanri_voice import router as voice_router
 
 load_dotenv()
 
 app = FastAPI(title="SANRI API")
 
-# 🔥 CORS – EN ÜSTE
+# ✅ CORS: Panel başka domain'e gitse bile çalışsın
+# (wildcard + credentials birlikte sorun çıkarır, o yüzden credentials=False)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 🔥 STATIC (panel + prompts)
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-
+# ✅ Static mount (panel + prompts)
+STATIC_DIR = Path(__file__).resolve().parent / "static"  # app/static
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# 🔥 ROUTERS
-app.include_router(bilinc_router)
-app.include_router(voice_router)
-
-# 🔥 ROOT → PANEL
-@app.get("/", include_in_schema=False)
+@app.get("/")
 def root():
-    return RedirectResponse("/static/panel.html")
+    return RedirectResponse(url="/static/panel.html")
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+# ✅ Only one router for now (ayağa kalkınca diğerlerini ekleriz)
+app.include_router(bilinc_router)
