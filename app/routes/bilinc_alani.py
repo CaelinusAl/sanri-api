@@ -6,7 +6,6 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from openai import OpenAI
 
-from app.routes.memory import get_memory, add_message
 from app.prompts.system_base import build_system_prompt
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
@@ -22,7 +21,7 @@ def get_client() -> OpenAI:
 class AskRequest(BaseModel):
     message: Optional[str] = None
     question: Optional[str] = None
-    session_id: Optional[str] = "default"
+    session_id: Optional[str] = "default"  # panel gönderiyor; şimdilik saklıyoruz ama kullanmıyoruz
     domain: Optional[str] = None
     mode: Optional[str] = "user"  # user | test | cocuk
 
@@ -35,7 +34,7 @@ class AskResponse(BaseModel):
 
 @router.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
-    # (şimdilik token/gate kontrolü yok — ayağa kalkınca ekleriz)
+    # Şimdilik token/gate kontrolü yok — ayağa kalkınca ekleriz.
 
     user_text = req.text()
     session_id = (req.session_id or "default").strip()
@@ -45,17 +44,18 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
 
     system_prompt = build_system_prompt(req.mode)
 
-    history = get_memory(session_id) or []
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history)
-    messages.append({"role": "user", "content": user_text})
+    # ✅ STATELESS: memory/history yok
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text},
+    ]
 
     client = get_client()
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
-            temperature=float(os.getenv("SANRI_TEMPERATURE", "0.4")),
+            temperature=float(os.getenv("SANRI_TEMPERATURE", "0.35")),
             max_tokens=int(os.getenv("SANRI_MAX_TOKENS", "300")),
         )
         reply = (completion.choices[0].message.content or "").strip()
@@ -65,5 +65,4 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     if not reply:
         reply = "Buradayım."
 
-    add_message(session_id, user_text, reply)
     return AskResponse(response=reply, session_id=session_id)
