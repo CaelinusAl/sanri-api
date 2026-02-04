@@ -33,29 +33,34 @@ class AskResponse(BaseModel):
 
 @router.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
+
     user_text = req.text()
+    session_id = (req.session_id or "default").strip()
+
     if not user_text:
-        return AskResponse(response="")
+        return AskResponse(response="", session_id=session_id)
 
     system_prompt = build_system_prompt(req.mode)
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text},
+    ]
 
     client = get_client()
 
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text},
-            ],
-            temperature=float(os.getenv("SANRI_TEMPERATURE", "0.35")),
-            max_tokens=int(os.getenv("SANRI_MAX_TOKENS", "300")),
+            messages=messages,
+            temperature=0.4,
+            max_tokens=300,
         )
-        reply = (completion.choices[0].message.content or "").strip()
+        reply = completion.choices[0].message.content
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     if not reply:
         reply = "Buradayım."
 
-    return AskResponse(response=reply)
+    return AskResponse(response=reply, session_id=session_id)
