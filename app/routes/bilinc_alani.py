@@ -52,12 +52,14 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
 
     client = get_client()
     try:
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            temperature=float(os.getenv("SANRI_TEMPERATURE", "0.35")),
-            max_tokens=int(os.getenv("SANRI_MAX_TOKENS", "300")),
-        )
+        completion = client.responses.create(
+    model=MODEL_NAME,
+    input=messages,
+    temperature=0.4,
+    max_output_tokens=300,
+)
+
+reply = completion.output_text
         reply = (completion.choices[0].message.content or "").strip()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
