@@ -148,8 +148,7 @@
       <div class="pill">Kapı Sayısı: <b id="gateCount">0</b></div>
       <div class="pill">Durum: <b id="statusText">Hazır</b></div>
     </div>
-
-    <div class="note">
+<div class="note">
       <b>Not:</b> SANRI kehanet/teşhis/yargı üretmez. Sembolik anlam ve tek soru ile fark ettirir.
       <div class="mutedTiny" style="margin-top:6px">Bu panel test içindir. AskSANRI web UI ayrı.</div>
     </div>
@@ -199,9 +198,8 @@
 <script>
 document.addEventListener("DOMContentLoaded", () => {
 
-
+  // ✅ SAME-ORIGIN: Panel hangi domaindeyse API de orası
   const API_BASE = window.location.origin;
-
   document.getElementById("apiBaseView").textContent = API_BASE;
 
   // DOM
@@ -365,7 +363,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function fetchJson(path){
-    // ✅ same-origin
     const r = await fetch(path, { cache: "no-store" });
     if(!r.ok) throw new Error(path + " → " + r.status);
     return r.json();
@@ -435,61 +432,62 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  async function sendChat() {
-  const message = msgInput.value.trim();
-  if (!message) return;
+  async function sendChat(){
+    const message = msgInput.value.trim();
+    if(!message) return;
 
-  addLine("user", message);
-  msgInput.value = "";
-  sendBtn.disabled = true;
+    addLine("user", message);
+    msgInput.value = "";
+    sendBtn.disabled = true;
 
-  try {
-    setStatus("Yazıyor...");
+    try{
+      setStatus("Yazıyor...");
 
-    let finalMessage = message;
-    let domain = null;
+      let finalMessage = message;
+      let domain = null;
 
-    if (activeGateKey && gateLocked) {
-      const g = GATES[activeGateKey];
-      finalMessage = buildGatePrompt(g) + "\nKULLANICI:\n" + message;
-      domain = String(activeGateKey);
-    }
+      if(activeGateKey && gateLocked){
+        const g = GATES[activeGateKey];
+        finalMessage = buildGatePrompt(g) + "\nKULLANICI:\n" + message;
+        domain = String(activeGateKey);
+      }
 
-    const headers = { "Content-Type": "application/json" };
-    if (SANRI_TOKEN) headers["x-sanri-token"] = SANRI_TOKEN;
+      const headers = { "Content-Type": "application/json" };
+      if(SANRI_TOKEN) headers["x-sanri-token"] = SANRI_TOKEN;
 
-    const res = await fetch(API_BASE + "/bilinc-alani/ask", {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({
-        message: finalMessage,
-        session_id: sessionId || "default",
-        domain: domain,
-        mode: "user"
-      })
-    });
+      const res = await fetch(API_BASE + "/bilinc-alani/ask", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          message: finalMessage,
+          session_id: sessionId || "default",
+          domain,
+          mode: "user"
+        })
+      });
 
-    if (!res.ok) {
-      const t = await res.text();
-      addLine("assistant", "SERVER ERROR → " + t);
+      if(!res.ok){
+        const t = await res.text();
+        addLine("assistant", "SERVER ERROR → " + t);
+        setStatus("Hata");
+        return;
+      }
+
+      const data = await res.json();
+      const reply = data.response || data.answer || data.reply || "";
+      addLine("assistant", reply || "Buradayım.");
+      setStatus("Hazır");
+
+      if(data.session_id) sessionId = data.session_id;
+
+    }catch(e){
+      addLine("assistant", "HATA → " + (e?.message || String(e)));
       setStatus("Hata");
-      return;
+    }finally{
+      sendBtn.disabled = false;
     }
-
-    const data = await res.json();
-    const reply = data.response || data.answer || data.reply || "";
-    addLine("assistant", reply || "Buradayım.");
-    setStatus("Hazır");
-
-    if (data.session_id) sessionId = data.session_id;
-
-  } catch (e) {
-    addLine("assistant", "HATA → " + (e?.message || String(e)));
-    setStatus("Hata");
-  } finally {
-    sendBtn.disabled = false;
   }
-}
+
   function clearChat(){
     chatlog.innerHTML = "";
     setStatus("Temizlendi");
@@ -526,5 +524,9 @@ document.addEventListener("DOMContentLoaded", () => {
   clearCard();
   setActiveLabel();
   loadGates();
+
 });
 </script>
+
+</body>
+</html>
