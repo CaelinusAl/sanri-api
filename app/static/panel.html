@@ -198,7 +198,7 @@
 <script>
 document.addEventListener("DOMContentLoaded", () => {
 
-  // ✅ SAME-ORIGIN: Panel hangi domaindeyse API de orası
+
   const API_BASE = window.location.origin;
   document.getElementById("apiBaseView").textContent = API_BASE;
 
@@ -455,7 +455,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const headers = { "Content-Type": "application/json" };
       if(SANRI_TOKEN) headers["x-sanri-token"] = SANRI_TOKEN;
 
-      const res = await fetch(API_BASE + "/bilinc-alani/ask", {
+      const res = await fetch("/bilinc-alani/ask", {
         method: "POST",
         headers,
         body: JSON.stringify({
