@@ -7,7 +7,6 @@ from pydantic import BaseModel
 
 from openai import OpenAI
 
-# Senin projende bu fonksiyon var demiştin:
 from app.prompts.system_base import build_system_prompt
 
 logger = logging.getLogger("sanri.bilinc_alani")
@@ -53,40 +52,31 @@ def extract_user_text(req: AskRequest) -> str:
 
 @router.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
-    # 1) Token (opsiyonel)
-    check_token(x_sanri_token)
 
-    # 2) Input
-    user_text = extract_user_text(req)
+    user_text = req.text()
     session_id = (req.session_id or "default").strip()
-    mode = (req.mode or "user").strip()
 
     if not user_text:
         return AskResponse(response="", session_id=session_id)
 
-    # 3) System prompt
-    try:
-        system_prompt = build_system_prompt(mode)
-    except Exception as e:
-        logger.exception("System prompt build failed")
-        raise HTTPException(status_code=500, detail=f"System prompt error: {str(e)}")
+    system_prompt = build_system_prompt(req.mode)
 
-    # 4) OpenAI (responses API)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text},
+    ]
+
     client = get_client()
 
     try:
-        result = client.responses.create(
+        completion = client.chat.completions.create(
             model=MODEL_NAME,
-            input=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text},
-            ],
+            messages=messages,
+            temperature=0.4,
+            max_tokens=300,
         )
-        reply = (result.output_text or "").strip()
-
+        reply = completion.choices[0].message.content
     except Exception as e:
-        # Gerçek hatayı saklama; Railway loglarında görünsün
-        logger.exception("OpenAI call failed")
         raise HTTPException(status_code=500, detail=str(e))
 
     if not reply:
