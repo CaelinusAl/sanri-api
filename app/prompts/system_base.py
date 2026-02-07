@@ -1,6 +1,6 @@
 # app/prompts/system_base.py
 
-SANRI_PROMPT_VERSION =  SANRI_V2_2026_02_08
+# SANRI_PROMPT_VERSION: SANRI_V2_2026_02_08
 
 def build_system_prompt(mode: str = "user") -> str:
     """
