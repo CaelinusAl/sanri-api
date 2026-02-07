@@ -1,3 +1,4 @@
+# app/main.py
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,24 +10,27 @@ from app.routes.bilinc_alani import router as bilinc_router
 
 load_dotenv()
 
+# ✅ UYGULAMA OLUŞTURULMALI
 app = FastAPI(title="SANRI API")
 
+# ✅ CORS MUTLAKA APP'TEN SONRA EKLENİR
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://asksanri.com",
         "https://www.asksanri.com",
         "https://asksanri.vercel.app",
+        "https://asksanri-frontend-52xeuimg-caelinus-ai-d01e5346.vercel.app",
         "http://localhost:5173",
     ],
-    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ✅ Static mount
 STATIC_DIR = Path(_file_).resolve().parent / "static"
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 def root():
@@ -36,4 +40,5 @@ def root():
 def health():
     return {"status": "ok"}
 
+# ✅ Router
 app.include_router(bilinc_router)
