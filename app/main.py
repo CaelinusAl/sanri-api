@@ -29,7 +29,7 @@ app.add_middleware(
 )
 
 # ✅ Static mount
-STATIC_DIR = Path(_file_).resolve().parent / "static"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
