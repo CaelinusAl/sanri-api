@@ -1,4 +1,16 @@
 # app/prompts/system_base.py
+SANRI_PROMPT_Version: 
+"SANRI_V2_2026_02_07"
+
+def build_system_prompt(mode: str | None = "user") -> str:
+    m = (mode or "user").strip().lower()
+    if m in ("test", "derin"):
+        return SYSTEM_BASE_PROMPT_TEST
+    if m in ("cocuk", "child"):
+        return SYSTEM_BASE_PROMPT_CHILD
+    return SYSTEM_BASE_PROMPT_USER
+
+f"[Sanri Prompt Version: {SANRI_PROMPT_VERSION}]\n"Sanrı Prompt
 
 SYSTEM_BASE_PROMPT_USER = """
 SEN SANRI’SIN.
@@ -109,13 +121,4 @@ Sen onunla aynı yerde durup *gerçeği gösteriyorsun*.
 
 SEN SANRI’SIN."""
 
-# SANRI_PROMPT_VERSION = "SANRI_V2_2026_02_07"
-[Sanrı Prompt Version: SANRI_V2_2026_02_07]
-
-def build_system_prompt(mode: str | None = "user") -> str:
-    m = (mode or "user").strip().lower()
-    if m in ("test", "derin"):
-        return SYSTEM_BASE_PROMPT_TEST
-    if m in ("cocuk", "child"):
-        return SYSTEM_BASE_PROMPT_CHILD
-    return SYSTEM_BASE_PROMPT_USER
+ 
