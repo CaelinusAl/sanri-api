@@ -81,6 +81,7 @@ def ask(
         print("🔥 SANRI LLM ERROR 🔥")
         print(repr(e))
         print(traceback.format_exc())
+        print("SANRI PROMPT LOADED:", system_prompt[:120])
 
         raise HTTPException(
             status_code=500,
