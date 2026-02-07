@@ -1,4 +1,37 @@
-# app/main.py
+[15:09, 07.02.2026] Celine River: # app/routes/bilinc_alani.py
+import os
+import traceback
+from typing import Optional
+
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+from openai import OpenAI
+
+from app.prompts.system_base import build_system_prompt
+
+router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
+
+# Model
+MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
+
+# =======================
+# Schemas
+# =======================
+
+class AskRequest(BaseModel):
+    message: Optional[str] = None
+    question: Optional[str] = None
+    session_id: Optional[str] = "default"
+    mode: Optional[str] = "user"  # user | test | cocuk
+
+    def text(self) -> str:
+        return (self.message or self.question or "").strip()
+
+class AskResponse(BaseModel…
+[15:10, 07.02.2026] Celine River: git add app/routes/bilinc_alani.py
+git commit -m "fix: robust LLM error handling and logging"
+git push
+[15:14, 07.02.2026] Celine River: # app/main.py
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,50 +40,56 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 
-# Routers
 from app.routes.bilinc_alani import router as bilinc_router
-from app.routes.auth import router as auth_router
-from app.routes.membership import router as membership_router
 
+# -------------------------------------------------
+# ENV
+# -------------------------------------------------
 load_dotenv()
 
 app = FastAPI(title="SANRI API")
 
-# ✅ CORS: custom domain + all Vercel preview domains
+# -------------------------------------------------
+# CORS (Frontend + Local)
+# -------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://asksanri.com",
         "https://www.asksanri.com",
         "https://asksanri.vercel.app",
+        "https://asksanri-frontend.vercel.app",
         "http://localhost:5173",
     ],
-    # allows any https://*.vercel.app (preview + prod)
-    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Static mount (panel + prompts)
-STATIC_DIR = Path(__file__).resolve().parent / "static"  # app/static
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+# -------------------------------------------------
+# Static (panel + prompts)
+# -------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
 
+app.mount(
+    "/static",
+    StaticFiles(directory=STATIC_DIR),
+    name="static",
+)
 
+# -------------------------------------------------
+# Root
+# -------------------------------------------------
 @app.get("/")
 def root():
-    return RedirectResponse(url="/static/panel.html")
-
+    return RedirectResponse("/static/panel.html")
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-
-# ✅ API routers
-# Bilinc routes (whatever prefix is defined inside bilinc_alani.py)
+# -------------------------------------------------
+# Routes
+# -------------------------------------------------
 app.include_router(bilinc_router)
-
-# Auth & subscription routes (frontend calls /api/...)
-app.include_router(auth_router, prefix="/api")
-app.include_router(membership_router, prefix="/api")
