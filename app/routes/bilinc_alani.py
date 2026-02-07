@@ -59,7 +59,7 @@ def ask(
     if not user_text:
         return AskResponse(response="", session_id=session_id)
 
-    system_prompt = build_system_prompt(req.mode)
+    system_prompt = build_system_prompt(req.mode) + "\n\nCevabı 3 paragraf ver: (1) Şahitlik (2) Kod/Mesaj (3) Yön. Soru sorma."
 
     try:
         client = get_client()
