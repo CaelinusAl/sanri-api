@@ -1,37 +1,4 @@
-[15:09, 07.02.2026] Celine River: # app/routes/bilinc_alani.py
-import os
-import traceback
-from typing import Optional
-
-from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
-from openai import OpenAI
-
-from app.prompts.system_base import build_system_prompt
-
-router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
-
-# Model
-MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
-
-# =======================
-# Schemas
-# =======================
-
-class AskRequest(BaseModel):
-    message: Optional[str] = None
-    question: Optional[str] = None
-    session_id: Optional[str] = "default"
-    mode: Optional[str] = "user"  # user | test | cocuk
-
-    def text(self) -> str:
-        return (self.message or self.question or "").strip()
-
-class AskResponse(BaseModel…
-[15:10, 07.02.2026] Celine River: git add app/routes/bilinc_alani.py
-git commit -m "fix: robust LLM error handling and logging"
-git push
-[15:14, 07.02.2026] Celine River: # app/main.py
+# app/main.py
 from pathlib import Path
 
 from fastapi import FastAPI
