@@ -19,15 +19,13 @@ app.add_middleware(
     allow_origins=[
         "https://asksanri.com",
         "https://www.asksanri.com",
-        "https://asksanri.vercel.app",
-        "https://asksanri-frontend-52xeuimg-caelinus-ai-d01e5346.vercel.app",
         "http://localhost:5173",
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # ✅ Static mount
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
