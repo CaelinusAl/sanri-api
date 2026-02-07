@@ -13,8 +13,12 @@ load_dotenv()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+  "https://asksanri.com",
+  "https://www.asksanri.com",
+  "https://asksanri.vercel.app",
+  "http://localhost:5173",
+  # istersen preview linkleri de kalsın:
   "https://asksanri-frontend-52xeuimg-caelinus-ai-d01e5346.vercel.app",
-  "http://localhost:5173"
 ],
 allow_credentials=True,
     ],
