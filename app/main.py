@@ -13,9 +13,10 @@ load_dotenv()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://asksanri-frontend-52xeuimg-caelinus-ai-d01e5346.vercel.app",
-        "https://asksanri.vercel.app",
-        "http://localhost:5173"
+  "https://asksanri-frontend-52xeuimg-caelinus-ai-d01e5346.vercel.app",
+  "http://localhost:5173"
+],
+allow_credentials=True,
     ],
     allow_credentials=True,
     allow_methods=["*"],
