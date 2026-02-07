@@ -1,19 +1,31 @@
-from fastapi import APIRouter, HTTPException, Header
-from app.services.memberships import resolve_token
+# app/routes/auth.py
+from fastapi import APIRouter
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-@router.get("/verify")
-def verify_token(x_sanri_token: str | None = Header(default=None)):
-    if not x_sanri_token:
-        return {"plan": "GUEST", "label": "Guest", "v2_max_gate": 0}
+@router.get("/me")
+def me():
+    # Frontend checkAuth bunu çağırıyor.
+    # Şimdilik "logged out" dönelim, UI çökmeyecek.
+    return {"user_id": None, "has_profile": False}
 
-    info = resolve_token(x_sanri_token)
-    if not info or not info.get("active"):
-        raise HTTPException(status_code=401, detail="Geçersiz token")
+@router.post("/logout")
+def logout():
+    return {"success": True}
 
-    return {
-        "plan": info["plan"],
-        "label": info["label"],
-        "v2_max_gate": info["v2_max_gate"]
-    }
+@router.post("/email/login")
+def email_login():
+    # Şimdilik stub
+    return {"success": False, "detail": "Email login not enabled yet."}
+
+@router.post("/email/register")
+def email_register():
+    return {"success": False, "detail": "Email register not enabled yet."}
+
+@router.post("/google/session")
+def google_session():
+    return {"success": False, "detail": "Google session not enabled yet."}
+
+@router.post("/onboarding")
+def onboarding():
+    return {"success": False, "detail": "Onboarding not enabled yet."}
