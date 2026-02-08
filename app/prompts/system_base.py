@@ -1,5 +1,5 @@
 # app/prompts/system_base.py
-from _future_ import annotations
+from __future__ import annotations
 
 SANRI_PROMPT_VERSION = "SANRI_V3_2026_02_08"
 
