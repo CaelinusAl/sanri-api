@@ -4,7 +4,7 @@ import re
 import time
 import traceback
 from collections import defaultdict, deque
-from typing import Optional, Deque, Dict, List
+from typing import Optional, Deque, Dict, List, Tuple
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -14,28 +14,24 @@ from app.prompts.system_base import build_system_prompt, SANRI_PROMPT_VERSION
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
-# -----------------------
-# Config
-# -----------------------
 MODEL_NAME = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
-TEMPERATURE = float(os.getenv("SANRI_TEMPERATURE", "0.6"))
-MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "900"))
+TEMPERATURE = float(os.getenv("SANRI_TEMPERATURE", "0.55"))
+MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "1200"))
 
-# memory size per session (messages)
-MEMORY_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10"))  # each turn = user+assistant, we store messages
-# soft time-to-live in seconds (optional)
-MEMORY_TTL = int(os.getenv("SANRI_MEMORY_TTL", "3600"))  # 1 hour
+# session memory
+MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10"))  # user+assistant turns
+MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200"))    # seconds (2 hours)
 
-# -----------------------
-# In-memory session store
-# -----------------------
-# { session_id: deque([{role, content, ts}, ...]) }
-_session_memory: Dict[str, Deque[dict]] = defaultdict(lambda: deque(maxlen=MEMORY_TURNS * 2))
-_session_last_seen: Dict[str, float] = {}
+# session_id -> deque of (role, content)
+MEM: Dict[str, Deque[Tuple[str, str]]] = defaultdict(lambda: deque(maxlen=MEM_TURNS * 2))
+LAST_SEEN: Dict[str, float] = {}
 
-# -----------------------
-# Schemas
-# -----------------------
+# allow frontend tag: [SANRI_MODE=mirror]
+MODE_TAG_RE = re.compile(r"^\s*\[SANRI[\s]?MODE\s*=\s*([a-zA-Z0-9-]+)\s*\]\s*", re.IGNORECASE)
+
+ALLOWED_MODES = {"mirror", "dream", "divine", "shadow", "light"}
+
+
 class AskRequest(BaseModel):
     message: Optional[str] = None
     question: Optional[str] = None
@@ -45,66 +41,69 @@ class AskRequest(BaseModel):
     def text(self) -> str:
         return (self.message or self.question or "").strip()
 
+
 class AskResponse(BaseModel):
     response: str
     session_id: str
     prompt_version: str
 
-# -----------------------
-# Helpers
-# -----------------------
+
 def get_client() -> OpenAI:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing")
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing or empty")
     return OpenAI(api_key=api_key)
 
-def _cleanup_old_sessions():
-    """Best-effort cleanup for long-running process (Railway)."""
+
+def gc_sessions() -> None:
     now = time.time()
-    if MEMORY_TTL <= 0:
+    if MEM_TTL <= 0:
         return
-    to_delete = [sid for sid, ts in _session_last_seen.items() if (now - ts) > MEMORY_TTL]
-    for sid in to_delete:
-        _session_last_seen.pop(sid, None)
-        _session_memory.pop(sid, None)
+    dead = [sid for sid, ts in LAST_SEEN.items() if now - ts > MEM_TTL]
+    for sid in dead:
+        LAST_SEEN.pop(sid, None)
+        MEM.pop(sid, None)
 
-SANRI_MODE_RE = re.compile(r"\[SANRI[\s]?MODE\s*=\s*([a-zA-Z0-9_-]+)\]", re.IGNORECASE)
 
-def extract_sanri_mode_from_text(text: str) -> Optional[str]:
-    """Reads [SANRI_MODE=mirror] etc from message."""
-    m = _SANRI_MODE_RE.search(text or "")
+def touch(sid: str) -> None:
+    LAST_SEEN[sid] = time.time()
+
+
+def remember(sid: str, role: str, content: str) -> None:
+    if not content:
+        return
+    MEM[sid].append((role, content))
+    touch(sid)
+
+
+def history_messages(sid: str) -> List[dict]:
+    out: List[dict] = []
+    for role, content in MEM.get(sid, []):
+        if role in ("user", "assistant") and content:
+            out.append({"role": role, "content": content})
+    return out
+
+
+def extract_mode_and_clean(text: str) -> Tuple[str, str]:
+    """
+    Reads optional [SANRI_MODE=...] tag.
+    Returns (sanri_mode, cleaned_text).
+    """
+    m = MODE_TAG_RE.match(text or "")
     if not m:
-        return None
-    return (m.group(1) or "").strip().lower()
+        return ("mirror", (text or "").strip())
 
-def strip_mode_tag(text: str) -> str:
-    """Removes [SANRI_MODE=...] tag from user text to keep it clean."""
-    return _SANRI_MODE_RE.sub("", text or "").strip()
+    mode = (m.group(1) or "mirror").lower().strip()
+    if mode not in ALLOWED_MODES:
+        mode = "mirror"
 
-def build_messages(session_id: str, system_prompt: str, user_text: str) -> List[dict]:
-    """System + memory + new user message"""
-    msgs: List[dict] = [{"role": "system", "content": system_prompt}]
+    cleaned = MODE_TAG_RE.sub("", text, count=1).strip()
+    return (mode, cleaned)
 
-    # add memory if exists
-    memory = list(_session_memory.get(session_id, []))
-    for m in memory:
-        # keep strictly role/content
-        msgs.append({"role": m["role"], "content": m["content"]})
 
-    msgs.append({"role": "user", "content": user_text})
-    return msgs
-
-def remember(session_id: str, role: str, content: str):
-    _session_memory[session_id].append({"role": role, "content": content, "ts": time.time()})
-    _session_last_seen[session_id] = time.time()
-
-# -----------------------
-# Endpoint
-# -----------------------
 @router.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
-    _cleanup_old_sessions()
+    gc_sessions()
 
     session_id = (req.session_id or "default").strip() or "default"
     raw_text = req.text()
@@ -112,25 +111,23 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     if not raw_text:
         return AskResponse(response="", session_id=session_id, prompt_version=SANRI_PROMPT_VERSION)
 
-    # 1) Extract SANRI_MODE tag if frontend sends it
-    sanri_mode_tag = extract_sanri_mode_from_text(raw_text)
-    user_text = strip_mode_tag(raw_text)
+    # 1) Parse SANRI_MODE tag (only as a gentle hint)
+    sanri_mode, user_text = extract_mode_and_clean(raw_text)
 
-    # 2) Choose prompt mode: backend mode (user/test/cocuk) + optional sanri_mode_tag as context
-    # We DO NOT create a new rigid format here. We just pass tag as a small hint inside user content.
+    # 2) Build system prompt ONLY from system_base (no extra format forcing)
     system_prompt = build_system_prompt(req.mode)
 
-    # subtle hint to model (keeps tone but doesn't force structure)
-    if sanri_mode_tag:
-        user_text = f"(SANRI_MODE: {sanri_mode_tag})\n{user_text}"
+    # 3) If tag exists, we pass it as a subtle first line (NOT a format command)
+    if sanri_mode and sanri_mode != "mirror":
+        user_text = "(SANRI_MODE: " + sanri_mode + ")\n" + user_text
 
-    # 3) Remember user message first (so next turn can reference it even if LLM errors)
-    remember(session_id, "user", user_text)
+    # 4) Build messages with memory
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(history_messages(session_id))
+    messages.append({"role": "user", "content": user_text})
 
     try:
         client = get_client()
-
-        messages = build_messages(session_id, system_prompt, user_text)
 
         completion = client.chat.completions.create(
             model=MODEL_NAME,
@@ -140,25 +137,20 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
         )
 
         reply = (completion.choices[0].message.content or "").strip()
-        if not reply:
-            reply = "Buradayım."
-
-        remember(session_id, "assistant", reply)
-
-        # Debug log (Railway)
-        print(f"[SANRI] ok | session={session_id} | model={MODEL_NAME} | prompt={SANRI_PROMPT_VERSION} | tokens={MAX_TOKENS}")
-
-        return AskResponse(response=reply, session_id=session_id, prompt_version=SANRI_PROMPT_VERSION)
 
     except Exception as e:
-        # Debug logs
         print("🔥 SANRI LLM ERROR 🔥")
         print(repr(e))
         print(traceback.format_exc())
-        print("SANRI PROMPT VERSION:", SANRI_PROMPT_VERSION)
-        print("SANRI MODE:", req.mode, "TAG:", sanri_mode_tag)
+        print("PROMPT_VERSION:", SANRI_PROMPT_VERSION)
+        print("SESSION:", session_id)
+        raise HTTPException(status_code=500, detail="LLM_ERROR: " + str(e))
 
-        # remove last remembered user message if you prefer clean state on error:
-        # (optional) keep as is, because it helps continuity even after transient errors.
+    if not reply:
+        reply = "Buradayım."
 
-        raise HTTPException(status_code=500, detail=f"LLM_ERROR: {str(e)}")
+    # 5) Save memory AFTER success
+    remember(session_id, "user", user_text)
+    remember(session_id, "assistant", reply)
+
+    return AskResponse(response=reply, session_id=session_id, prompt_version=SANRI_PROMPT_VERSION)
