@@ -10,8 +10,14 @@ from dotenv import load_dotenv
 from app.routes.bilinc_alani import router as bilinc_router
 from app.routes.auth import router as auth_router
 from app.routes.subscription import router as subscription_router
+from app.db import engine
+from app.models import Base
 
 load_dotenv()
+
+@app.on_event("startup")
+def _startup():
+    Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SANRI API")
 
