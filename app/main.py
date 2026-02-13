@@ -17,6 +17,9 @@ load_dotenv()
 
 # ✅ 1) app önce tanımlanır
 app = FastAPI(title="SANRI API")
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 # ✅ 2) sonra event decorator gelir
 @app.on_event("startup")
