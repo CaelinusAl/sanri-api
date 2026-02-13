@@ -1,4 +1,5 @@
 # app/main.py
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -15,46 +16,38 @@ from app.models import Base
 
 load_dotenv()
 
+def _split_origins(v: str) -> list[str]:
+    if not v:
+        return []
+    return [x.strip().rstrip("/") for x in v.split(",") if x.strip()]
+
 # ✅ 1) app önce tanımlanır
 app = FastAPI(title="SANRI API")
-@app.get("/health")
-def health():
-    return {"ok": True}
 
-# ✅ 2) sonra event decorator gelir
-@app.on_event("startup")
-def _startup():
-    Base.metadata.create_all(bind=engine)
+# ✅ 2) CORS hemen sonra eklenir (EN kritik nokta)
+allowed_origins = _split_origins(os.getenv("SANRI_ALLOWED_ORIGINS", ""))
+origin_regex = os.getenv("SANRI_ALLOWED_ORIGIN_REGEX", "").strip() or None
 
-# ✅ CORS
-allowed_origins = [
-    "https://asksanri.com",
-    "https://www.asksanri.com",
-    "https://asksanri-frontend.vercel.app",
-    "http://localhost:5173",
-]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=origin_regex, # ✅ Vercel preview: https://*.vercel.app
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ routers
+# ✅ health
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+# ✅ startup (db tablolar)
+@app.on_event("startup")
+def _startup():
+    Base.metadata.create_all(bind=engine)
+
+# ✅ router’lar
 app.include_router(bilinc_router)
 app.include_router(auth_router)
 app.include_router(subscription_router)
-
-# (opsiyonel) static
-static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-@app.get("/")
-def root():
-    return {"ok": True, "service": "sanri-api"}
-
-@app.get("/docs", include_in_schema=False)
-def docs_redirect():
-    return RedirectResponse(url="/docs")
