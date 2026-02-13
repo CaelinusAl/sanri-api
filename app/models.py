@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Boolean, func
 from .db import Base
 
 class User(Base):
-    _tablename_ = "users"  # <-- BU ÇOK ÖNEMLİ (çift underscore)
+    __tablename__ = "users"  # <-- BU ÇOK ÖNEMLİ (çift underscore)
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(320), unique=True, index=True, nullable=False)
