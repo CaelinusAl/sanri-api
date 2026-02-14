@@ -1,19 +1,31 @@
-# app/routes/gates.py
-import json
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+import json
 
 router = APIRouter(prefix="/api/gates", tags=["gates"])
 
-BASE_DIR = Path(__file__).resolve().parents[1] # app/
-PROMPS_DIR = BASE_DIR / "static" / "promps" # sende "promps" diye duruyor
+# routes klasöründeyiz → app klasörüne çık
+BASE_DIR = Path(__file__).resolve().parents[1]
 
-def _load(name: str):
-    p = PROMPS_DIR / name
-    if not p.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {p}")
-    return json.loads(p.read_text(encoding="utf-8"))
+# Doğru klasör adı:
+PROMPTS_DIR = BASE_DIR / "static" / "prompts"
+
+def load_json(name: str):
+    file_path = PROMPTS_DIR / name
+    
+    if not file_path.exists():
+        return JSONResponse(
+            {"detail": f"File not found: {file_path}"},
+            status_code=404
+        )
+    
+    return json.loads(file_path.read_text(encoding="utf-8"))
+
+@router.get("/v1")
+def gates_v1():
+    return load_json("gates_v1.json")
 
 @router.get("/v2")
 def gates_v2():
-    return _load("gates_v2.json")
+    return load_json("gates_v2.json")
