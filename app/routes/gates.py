@@ -5,11 +5,9 @@ import json
 
 router = APIRouter(prefix="/api/gates", tags=["gates"])
 
-# routes klasöründeyiz → app klasörüne çık
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(_file_).resolve().parent.parent
 
-# Doğru klasör adı:
-PROMPTS_DIR = BASE_DIR / "static" / "prompts"
+GATES_V2_PATH = BASE_DIR / "static" / "prompts" / "gates_v2.json"
 
 def load_json(name: str):
     file_path = PROMPTS_DIR / name
@@ -26,6 +24,8 @@ def load_json(name: str):
 def gates_v1():
     return load_json("gates_v1.json")
 
-@router.get("/v2")
-def gates_v2():
-    return load_json("gates_v2.json")
+@router.get("/gates/v2")
+def get_gates_v2():
+    if not GATES_V2_PATH.exists():
+        return {"detail": f"File not found: {GATES_V2_PATH}"}
+    return json.loads(GATES_V2_PATH.read_text(encoding="utf-8"))
