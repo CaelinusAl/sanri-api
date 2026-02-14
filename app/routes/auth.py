@@ -58,17 +58,18 @@ def parse_token(token: str) -> int | None:
 
 def set_auth_cookie(resp: Response, token: str):
     resp.set_cookie(
-        COOKIE_NAME,
-        token,
+        key=COOKIE_NAME,
+        value=token,
         max_age=COOKIE_MAX_AGE,
         httponly=True,
-        secure=True, # HTTPS
-        samesite="none", # Vercel -> Railway cross-site cookie için şart
+        secure=True,
+        samesite="none",
+        domain=".asksanri.com",  
         path="/",
     )
 
 def clear_auth_cookie(resp: Response):
-    resp.delete_cookie(COOKIE_NAME, path="/")
+    resp.delete_cookie(COOKIE_NAME, path="/", domain=".asksanri.com")
 
 @router.post("/email/register")
 def email_register(data: RegisterRequest, response: Response):
