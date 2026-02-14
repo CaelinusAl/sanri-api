@@ -1,84 +1,51 @@
-# app/routes/admin.py
-import os
 from fastapi import APIRouter, HTTPException
 import psycopg2
+import os
+from datetime import datetime, date
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_KEY = os.getenv("ADMIN_KEY", "")
+ADMIN_KEY = os.getenv("ADMIN_KEY")
 
 def _conn():
-    if not DATABASE_URL:
-        raise HTTPException(status_code=500, detail="DATABASE_URL missing")
     return psycopg2.connect(DATABASE_URL)
 
-def _require_key(key: str):
-    if not ADMIN_KEY or key != ADMIN_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
 @router.get("/stats")
-def stats(key: str):
-    _require_key(key)
+def admin_stats(key: str):
+    if key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     conn = _conn()
-    try:
-        cur = conn.cursor()
+    cur = conn.cursor()
 
-        cur.execute("SELECT COUNT(*) FROM users")
-        total_users = cur.fetchone()[0] or 0
+    # toplam
+    cur.execute("SELECT COUNT(*) FROM users")
+    total = cur.fetchone()[0]
 
-        # son 24 saat kayıt (created_at varsa)
-        last_24h = None
-        try:
-            cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '24 hours'")
-            last_24h = cur.fetchone()[0] or 0
-        except:
-            last_24h = None
+    # bugün
+    cur.execute(
+        "SELECT COUNT(*) FROM users WHERE DATE(created_at) = %s",
+        (date.today(),)
+    )
+    today = cur.fetchone()[0]
 
-        # premium kolonun varsa
-        premium = None
-        try:
-            cur.execute("SELECT COUNT(*) FROM users WHERE is_premium = TRUE")
-            premium = cur.fetchone()[0] or 0
-        except:
-            premium = None
+    # premium (varsa plan sütunu)
+    cur.execute("SELECT COUNT(*) FROM users WHERE plan = 'premium'")
+    premium = cur.fetchone()[0]
 
-        return {
-            "total_users": total_users,
-            "last_24h": last_24h,
-            "premium_users": premium,
-        }
-    finally:
-        try:
-            cur.close()
-        except:
-            pass
-        conn.close()
+    # son 10
+    cur.execute(
+        "SELECT email, created_at FROM users ORDER BY created_at DESC LIMIT 10"
+    )
+    latest = cur.fetchall()
 
-@router.get("/users")
-def users(key: str, limit: int = 50, offset: int = 0):
-    _require_key(key)
-    conn = _conn()
-    try:
-        cur = conn.cursor()
-        # created_at yoksa ORDER BY id ile de iş görür
-        try:
-            cur.execute(
-                "SELECT id, email, created_at FROM users ORDER BY created_at DESC LIMIT %s OFFSET %s",
-                (limit, offset),
-            )
-            rows = cur.fetchall()
-            return [{"id": r[0], "email": r[1], "created_at": (r[2].isoformat() if r[2] else None)} for r in rows]
-        except:
-            cur.execute(
-                "SELECT id, email FROM users ORDER BY id DESC LIMIT %s OFFSET %s",
-                (limit, offset),
-            )
-            rows = cur.fetchall()
-            return [{"id": r[0], "email": r[1]} for r in rows]
-    finally:
-        try:
-            cur.close()
-        except:
-            pass
-        conn.close()
+    cur.close()
+    conn.close()
+
+    return {
+        "total": total,
+        "today": today,
+        "premium": premium,
+        "latest": latest
+    }
