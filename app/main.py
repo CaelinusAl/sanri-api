@@ -64,5 +64,5 @@ def _startup():
 
 # ✅ router’lar
 app.include_router(bilinc_router)
-app.include_router(auth_router)
-app.include_router(subscription_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(subscription_router, prefix="/api")
