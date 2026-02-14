@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
-import psycopg2
 import os
-from datetime import datetime, date
+import psycopg2
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -14,38 +13,25 @@ def _conn():
 @router.get("/stats")
 def admin_stats(key: str):
     if key != ADMIN_KEY:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=403, detail="Unauthorized")
 
     conn = _conn()
     cur = conn.cursor()
 
-    # toplam
     cur.execute("SELECT COUNT(*) FROM users")
     total = cur.fetchone()[0]
 
-    # bugün
-    cur.execute(
-        "SELECT COUNT(*) FROM users WHERE DATE(created_at) = %s",
-        (date.today(),)
-    )
+    cur.execute("SELECT COUNT(*) FROM users WHERE created_at::date = CURRENT_DATE")
     today = cur.fetchone()[0]
 
-    # premium (varsa plan sütunu)
-    cur.execute("SELECT COUNT(*) FROM users WHERE plan = 'premium'")
+    cur.execute("SELECT COUNT(*) FROM users WHERE is_premium = true")
     premium = cur.fetchone()[0]
-
-    # son 10
-    cur.execute(
-        "SELECT email, created_at FROM users ORDER BY created_at DESC LIMIT 10"
-    )
-    latest = cur.fetchall()
 
     cur.close()
     conn.close()
 
     return {
-        "total": total,
-        "today": today,
-        "premium": premium,
-        "latest": latest
+        "total_users": total,
+        "today_users": today,
+        "premium_users": premium
     }
