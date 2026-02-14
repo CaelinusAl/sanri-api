@@ -7,17 +7,17 @@ import hashlib
 import bcrypt
 import psycopg2
 
-from fastapi import APIRouter, Response, Request, HTTPException
+from fastapi import APIRouter, Response, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_SECRET = os.getenv("JWT_SECRET") # Railway'de şart
 
 COOKIE_NAME = "sanri_token"
-COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 gün
+COOKIE_MAX_AGE = 60 * 60 * 24 * 30 # 30 gün
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -34,7 +34,6 @@ def _conn():
 
 def _token_sign(payload: str) -> str:
     if not JWT_SECRET:
-        # JWT_SECRET yoksa cookie set edeme — net hata
         raise HTTPException(status_code=500, detail="JWT_SECRET missing")
     sig = hmac.new(JWT_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).digest()
     return base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
@@ -60,11 +59,15 @@ def parse_token(token: str) -> int | None:
     except:
         return None
 
+def _get_token_from_header_or_cookie(request: Request, authorization: str | None) -> str | None:
+    # 1) Authorization: Bearer <token>
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization.split(" ", 1)[1].strip() or None
+    # 2) Cookie
+    return request.cookies.get(COOKIE_NAME)
+
 def set_auth_cookie(resp: Response, token: str):
-    # ✅ Cross-site cookie için kritik ayarlar:
-    # - Secure=True
-    # - SameSite=None
-    # - Domain=.asksanri.com  (www ve asksanri aynı session)
+    # Cookie da basalım (bazı cihazlarda çalışır)
     resp.set_cookie(
         key=COOKIE_NAME,
         value=token,
@@ -72,12 +75,12 @@ def set_auth_cookie(resp: Response, token: str):
         httponly=True,
         secure=True,
         samesite="none",
-        domain=".asksanri.com",
+        # domain vermiyoruz: cookie sorun çıkarıyorsa token zaten body'de
         path="/",
     )
 
 def clear_auth_cookie(resp: Response):
-    resp.delete_cookie(COOKIE_NAME, domain=".asksanri.com", path="/")
+    resp.delete_cookie(COOKIE_NAME, path="/")
 
 @router.post("/email/register")
 def email_register(data: RegisterRequest):
@@ -104,14 +107,13 @@ def email_register(data: RegisterRequest):
         conn.commit()
 
         token = make_token(user_id)
-        resp = JSONResponse({"success": True, "user_id": user_id})
+
+        resp = JSONResponse({"success": True, "user_id": user_id, "token": token})
         set_auth_cookie(resp, token)
         return resp
     finally:
-        try:
-            cur.close()
-        except:
-            pass
+        try: cur.close()
+        except: pass
         conn.close()
 
 @router.post("/email/login")
@@ -133,19 +135,18 @@ def email_login(data: LoginRequest):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         token = make_token(user_id)
-        resp = JSONResponse({"success": True, "user_id": user_id})
+
+        resp = JSONResponse({"success": True, "user_id": user_id, "token": token})
         set_auth_cookie(resp, token)
         return resp
     finally:
-        try:
-            cur.close()
-        except:
-            pass
+        try: cur.close()
+        except: pass
         conn.close()
 
 @router.get("/me")
-def me(request: Request):
-    token = request.cookies.get(COOKIE_NAME)
+def me(request: Request, authorization: str | None = Header(default=None)):
+    token = _get_token_from_header_or_cookie(request, authorization)
     user_id = parse_token(token) if token else None
     if not user_id:
         return {"authenticated": False}
@@ -159,10 +160,8 @@ def me(request: Request):
             return {"authenticated": False}
         return {"authenticated": True, "user_id": user_id, "email": row[0]}
     finally:
-        try:
-            cur.close()
-        except:
-            pass
+        try: cur.close()
+        except: pass
         conn.close()
 
 @router.post("/logout")
@@ -170,12 +169,11 @@ def logout(response: Response):
     clear_auth_cookie(response)
     return {"success": True}
 
-# ✅ Debug: cookie gerçekten geliyor mu?
-@router.get("/debug-cookie")
-def debug_cookie(request: Request):
+@router.get("/debug-auth")
+def debug_auth(request: Request, authorization: str | None = Header(default=None)):
+    token = _get_token_from_header_or_cookie(request, authorization)
     return {
-        "origin": request.headers.get("origin"),
-        "cookie_names": list(request.cookies.keys()),
-        "token_present": COOKIE_NAME in request.cookies,
-        "token_prefix": (request.cookies.get(COOKIE_NAME, "")[:12]),
+        "has_cookie": COOKIE_NAME in request.cookies,
+        "has_auth_header": bool(authorization),
+        "token_prefix": (token[:14] if token else None),
     }
