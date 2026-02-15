@@ -14,7 +14,6 @@ ADMIN_KEY = (os.getenv("ADMIN_KEY") or "").strip()
 def _conn():
     if not DATABASE_URL:
         raise HTTPException(status_code=500, detail="DATABASE_URL missing in service env")
-    # connect_timeout ekleyelim (Railway bazen gecikir)
     return psycopg2.connect(DATABASE_URL, connect_timeout=8)
 
 
@@ -29,22 +28,15 @@ def _require_admin(key: str | None):
 
 @router.get("/stats")
 def admin_stats(key: str = Query(default=None, description="Admin key")):
-    """
-    Returns:
-      total_users: int
-      today_users: int
-      premium_users: int
-    """
     _require_admin(key)
 
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
-                # Total users
                 cur.execute("SELECT COUNT(*) FROM users;")
                 total = int(cur.fetchone()[0] or 0)
 
-                # Today users (created_at yoksa 0)
+                # Today users
                 today = 0
                 try:
                     cur.execute("SELECT COUNT(*) FROM users WHERE created_at::date = CURRENT_DATE;")
@@ -52,7 +44,7 @@ def admin_stats(key: str = Query(default=None, description="Admin key")):
                 except Exception:
                     today = 0
 
-                # Premium users (is_premium yoksa 0)
+                # Premium users
                 premium = 0
                 try:
                     cur.execute("SELECT COUNT(*) FROM users WHERE is_premium = true;")
@@ -60,14 +52,9 @@ def admin_stats(key: str = Query(default=None, description="Admin key")):
                 except Exception:
                     premium = 0
 
-        return {
-            "total_users": total,
-            "today_users": today,
-            "premium_users": premium,
-        }
+        return {"total_users": total, "today_users": today, "premium_users": premium}
 
     except psycopg2.Error as e:
-        # DB hatalarını daha anlaşılır döndür
         raise HTTPException(
             status_code=500,
             detail=f"admin_stats db error: {getattr(e, 'pgcode', '')} {str(e)}",
@@ -82,23 +69,23 @@ def admin_users(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
-    """
-    Latest users list for panel.
-    """
     _require_admin(key)
 
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
-                # created_at yoksa bile id üzerinden son kullanıcıları verir
                 cur.execute(
                     """
-                    SELECT id, email,
-                           COALESCE(created_at, NOW()) as created_at,
-                           COALESCE(is_premium, false) as is_premium,
-                           COALESCE(plan, 'free') as plan
+                    SELECT
+                        id,
+                        email,
+                        created_at,
+                        COALESCE(is_premium, false) as is_premium,
+                        COALESCE(plan, 'free') as plan,
+                        last_login_at,
+                        last_seen_at
                     FROM users
-                    ORDER BY id DESC
+                    ORDER BY created_at DESC NULLS LAST, id DESC
                     LIMIT %s OFFSET %s;
                     """,
                     (limit, offset),
@@ -114,10 +101,12 @@ def admin_users(
                     "created_at": r[2].isoformat() if r[2] else None,
                     "is_premium": bool(r[3]),
                     "plan": r[4],
+                    "last_login_at": r[5].isoformat() if r[5] else None,
+                    "last_seen_at": r[6].isoformat() if r[6] else None,
                 }
             )
 
-        return {"users": users, "limit": limit, "offset": offset}
+        return {"users": users, "count": len(users), "limit": limit, "offset": offset}
 
     except psycopg2.Error as e:
         raise HTTPException(
