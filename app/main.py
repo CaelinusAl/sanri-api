@@ -14,10 +14,11 @@ from app.models import Base
 
 load_dotenv()
 
+
 def _split_origins(v: str) -> list[str]:
     if not v:
         return []
-    out = []
+    out: list[str] = []
     for x in v.split(","):
         x = x.strip()
         if not x:
@@ -25,10 +26,12 @@ def _split_origins(v: str) -> list[str]:
         out.append(x.rstrip("/"))
     return out
 
-# ✅ App önce
+
+# ✅ 1) App önce
 app = FastAPI(title="SANRI API")
 
-# ✅ CORS hemen sonra (TEK KEZ)
+
+# ✅ 2) CORS hemen sonra (TEK KEZ)
 allowed_origins = _split_origins(os.getenv("SANRI_ALLOWED_ORIGINS", ""))
 origin_regex = (os.getenv("SANRI_ALLOWED_ORIGIN_REGEX", "").strip() or None)
 
@@ -53,13 +56,18 @@ app.add_middleware(
     allow_headers=["*"], # Content-Type dahil
 )
 
+
+# ✅ health
 @app.get("/health")
 def health():
     return {"ok": True}
 
+
+# ✅ startup (db tablolar)
 @app.on_event("startup")
 def _startup():
     Base.metadata.create_all(bind=engine)
+
 
 # ✅ router’lar
 app.include_router(bilinc_router)
