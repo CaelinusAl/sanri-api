@@ -33,12 +33,17 @@ class LoginRequest(BaseModel):
 def _conn():
     if not DATABASE_URL:
         raise HTTPException(status_code=500, detail="DATABASE_URL missing")
+    # SSL issue yaşarsan: psycopg2.connect(DATABASE_URL, sslmode="require")
     return psycopg2.connect(DATABASE_URL)
 
 
-def _token_sign(payload: str) -> str:
+def _require_secret():
     if not JWT_SECRET:
         raise HTTPException(status_code=500, detail="JWT_SECRET missing")
+
+
+def _token_sign(payload: str) -> str:
+    _require_secret()
     sig = hmac.new(JWT_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).digest()
     return base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
 
@@ -52,16 +57,21 @@ def make_token(user_id: int) -> str:
 
 def parse_token(token: str) -> int | None:
     try:
+        if not token:
+            return None
+
         parts = token.split(".")
         if len(parts) != 3:
             return None
+
         uid, ts, sig = parts
         payload = f"{uid}.{ts}"
 
+        # signature verify
         if not hmac.compare_digest(_token_sign(payload), sig):
             return None
 
-        # 30 gün TTL
+        # TTL (30 gün)
         if int(time.time()) - int(ts) > COOKIE_MAX_AGE:
             return None
 
@@ -80,7 +90,7 @@ def _get_token_from_header_or_cookie(request: Request, authorization: str | None
 
 
 def set_auth_cookie(resp: Response, token: str):
-    # Cross-site (Vercel->Railway) cookie için:
+    # Cross-site (Vercel -> api) cookie için:
     resp.set_cookie(
         key=COOKIE_NAME,
         value=token,
@@ -98,6 +108,8 @@ def clear_auth_cookie(resp: Response):
 
 @router.post("/email/register")
 def email_register(data: RegisterRequest):
+    _require_secret()
+
     email = data.email.lower().strip()
     password = data.password
 
@@ -123,8 +135,12 @@ def email_register(data: RegisterRequest):
 
         # created_at db default; ama last_seen/login varsa set edelim
         try:
-            cur.execute("UPDATE users SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = %s", (user_id,))
+            cur.execute(
+                "UPDATE users SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = %s",
+                (user_id,),
+            )
         except Exception:
+            # kolon yoksa vs sorun çıkmasın
             pass
 
         conn.commit()
@@ -134,6 +150,12 @@ def email_register(data: RegisterRequest):
         set_auth_cookie(resp, token)
         return resp
 
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"register failed: {type(e).__name__}: {str(e)}")
     finally:
         try:
             cur.close()
@@ -144,37 +166,43 @@ def email_register(data: RegisterRequest):
 
 @router.post("/email/login")
 def email_login(data: LoginRequest):
+    _require_secret()
+
     email = data.email.lower().strip()
     password = data.password
 
     conn = _conn()
     cur = conn.cursor()
     try:
-        # user çek
         cur.execute("SELECT id, password_hash FROM users WHERE email = %s", (email,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         user_id, password_hash = row
-
         ok = bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
         if not ok:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        # ✅ login timestamp + seen
+        # ✅ girişte takip
         try:
-            cur.execute("UPDATE users SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = %s", (user_id,))
+            cur.execute(
+                "UPDATE users SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = %s",
+                (user_id,),
+            )
+            conn.commit()
         except Exception:
-            pass
-
-        conn.commit()
+            conn.rollback()
 
         token = make_token(user_id)
         resp = JSONResponse({"success": True, "user_id": user_id, "token": token})
         set_auth_cookie(resp, token)
         return resp
 
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"login failed: {type(e).__name__}: {str(e)}")
     finally:
         try:
             cur.close()
@@ -193,20 +221,32 @@ def me(request: Request, authorization: str | None = Header(default=None)):
     conn = _conn()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT email FROM users WHERE id = %s", (user_id,))
-        row = cur.fetchone()
-        if not row:
-            return {"authenticated": False}
-
-        # ✅ seen timestamp
+        # ✅ her /me çağrısında last_seen_at güncelle
         try:
             cur.execute("UPDATE users SET last_seen_at = NOW() WHERE id = %s", (user_id,))
             conn.commit()
         except Exception:
-            pass
+            conn.rollback()
 
-        return {"authenticated": True, "user_id": user_id, "email": row[0]}
+        cur.execute(
+            "SELECT email, is_premium, plan, created_at, last_login_at, last_seen_at FROM users WHERE id = %s",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return {"authenticated": False}
 
+        email, is_premium, plan, created_at, last_login_at, last_seen_at = row
+        return {
+            "authenticated": True,
+            "user_id": user_id,
+            "email": email,
+            "is_premium": bool(is_premium) if is_premium is not None else False,
+            "plan": plan or "free",
+            "created_at": created_at,
+            "last_login_at": last_login_at,
+            "last_seen_at": last_seen_at,
+        }
     finally:
         try:
             cur.close()
