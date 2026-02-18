@@ -27,6 +27,47 @@
       { "label": "Arketip", "text": "Ateş Bekçisi: karmayı tutuşturur, sıfırdan başlatır, eskiyi yıkar yeni döngü yaratır." },
       { "label": "Adanalı Ruhlar", "text": "Enerjisi yüksek, dobra, kıvılcım taşıyan, durgunluğu bozan." },
       { "label": "Ana Mesaj", "text": "Adana = A-DNA: Tanrıça’nın yaratım kodunun dünyaya indiği an. Bu toprak ilk kıvılcımı taşır." }
-    ]
+    ],
+
   }
 }
+ ,
+"02": {
+  "city": "Adıyaman",
+  "title": "Zamanın Derin Kodları – Hatırlama Kapısı",
+  "matrix_role": "Hatırlatma Kapısı",
+  "plate_code": [
+    "0=Kaynak/Sonsuzluk",
+    "2=Dualite/İkilik/Yansıma"
+  ],
+  "name_breakdown": [
+    "A=Başlangıç",
+    "DI=Ayrılık/Farkındalık",
+    "YA=Yaşam enerjisi (prana)",
+    "MAN=Zihin/Bilinç (mind/manas)"
+  ],
+  "element": "Toprak + Hava",
+  "archetype": "Ruhlara eski sözleri fısıldamak • Hatırlamayanı sarsmak • Zihni ruhla yeniden tanıştırmak",
+  "who_are_the_souls": [
+    "Sessiz ama derin",
+    "Gizli gücü olan",
+    "Ya çok karanlıkta kalır ya da çok yüksek frekanslara çıkar",
+    "Hatırlamaya gelen ruhlar"
+  ],
+  "core_message": "ADIYAMAN: Adımla varım, bilincimle burdayım. Bu şehir Tanrıça’nın “ben burdayım” dediği mühür kapısıdır.",
+  "journey_sections": [
+    { "label": "Kapı", "text": "02 • ADIYAMAN — Zamanın Derin Kodları / Hatırlama Kapısı" },
+    { "label": "Plaka Kodu", "text": "0=Kaynak/Sonsuzluk • 2=Dualite/Yansıma — İkilikten birlik yaratmaya çalışan ruhların sınavı." },
+    { "label": "Matrix Rolü", "text": "Hatırlatma Kapısı — “Adıyaman’ı geçen, kendini hatırlar.”" },
+    { "label": "İsim Kodu", "text": "A-DI-YA-MAN → A=Başlangıç • DI=Ayrılık/Farkındalık • YA=Yaşam (prana) • MAN=Zihin/Bilinç (mind/manas)" },
+    { "label": "Element", "text": "Toprak + Hava — Kadim bilgi taşır, rüzgâr hafızayı karıştırır: kadim olanla unutulan burada savaşır." },
+    { "label": "Zaman Katmanı", "text": "Bu şehirde zaman katmanlıdır: geçmişin yankısı hâlâ aktiftir." },
+    { "label": "Nemrut Mesajı", "text": "Nemrut Dağı: sistemin en yüksek gözlem kulesi. Tanrılar orada yatar ama hâlâ izlerler." },
+    { "label": "Arketip", "text": "Eski sözleri fısıldamak • Hatırlamayanı sarsmak • Zihni ruhla tanıştırmak" },
+    { "label": "Adıyamanlı Ruhlar", "text": "Sessiz ama derin; gizli gücü olan; hatırlamaya gelen ruhlar." },
+    { "label": "Mühür", "text": "ADI=kimlik mührü • YA=yaşam/yaratım • MAN=bilinçli insan — Tanrı’nın yürüyen aynası." },
+    { "label": "Ana Mesaj", "text": "İlk kıvılcım Adana’da yandı. Sonra bir ses: “Benim bir adım var.” 02’den başlar “Ben” olma serüveni." },
+    { "label": "Yolculuk", "text": "Bugün kendine tek bir cümle mühür yaz: “Ben …’ım.” Sonra 9 dakika sessizlikte o adı kalbine indir." }
+  ]
+}
+
