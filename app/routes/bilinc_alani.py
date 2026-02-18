@@ -4,13 +4,14 @@ import re
 import time
 import traceback
 from collections import defaultdict, deque
-from typing import Optional, Deque, Dict, List, Tuple
+from typing import Optional, Deque, Dict, List, Tuple, Any
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from openai import OpenAI
 
-from app.prompts.system_base import build_system_prompt, SANRI_PROMPT_VERSION
+from app.prompts.system_base import SANRI_PROMPT_VERSION
+from app.modules.registry import REGISTRY  # ✅ domain -> module map
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
@@ -26,26 +27,49 @@ MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200"))    # seconds (2 hours)
 MEM: Dict[str, Deque[Tuple[str, str]]] = defaultdict(lambda: deque(maxlen=MEM_TURNS * 2))
 LAST_SEEN: Dict[str, float] = {}
 
-# allow frontend tag: [SANRI_MODE=mirror]
+# legacy allow frontend tag: [SANRI_MODE=mirror]
 MODE_TAG_RE = re.compile(r"^\s*\[SANRI[\s]?MODE\s*=\s*([a-zA-Z0-9-]+)\s*\]\s*", re.IGNORECASE)
-
-ALLOWED_MODES = {"mirror", "dream", "divine", "shadow", "light"}
+ALLOWED_GATE_MODES = {"mirror", "dream", "divine", "shadow", "light"}
 
 
 class AskRequest(BaseModel):
+    # user input
     message: Optional[str] = None
     question: Optional[str] = None
     session_id: Optional[str] = "default"
-    mode: Optional[str] = "user"  # user | test | cocuk
+
+    # ✅ NEW: gerçek modül seçimi
+    domain: Optional[str] = "auto"           # awakened_cities | ritual_space | library | ...
+    gate_mode: Optional[str] = "mirror"      # mirror | dream | divine | shadow | light
+
+    # ✅ NEW: system persona (eski req.mode gibi)
+    persona: Optional[str] = "user"          # user | test | cocuk
+
+    # ✅ OPTIONAL: awakened_cities için hızlı sinyal
+    plate: Optional[str] = None              # "34" gibi
+
+    # ⚠️ BACKWARD COMPAT:
+    # Eski client'lar "mode" alanını yolluyor olabilir.
+    # - Eğer "mirror/dream/..." yolluyorsa gate_mode gibi alınır
+    # - Eğer "user/test/cocuk" yolluyorsa persona gibi alınır
+    mode: Optional[str] = Field(default=None)
 
     def text(self) -> str:
         return (self.message or self.question or "").strip()
 
 
 class AskResponse(BaseModel):
+    # backward compatibility
     response: str
     session_id: str
     prompt_version: str
+
+    # ✅ NEW structured output
+    module: str = "mirror"
+    title: str = "Sanrı"
+    answer: str = ""
+    sections: List[dict] = []
+    tags: List[str] = []
 
 
 def get_client() -> OpenAI:
@@ -86,7 +110,7 @@ def history_messages(sid: str) -> List[dict]:
 
 def extract_mode_and_clean(text: str) -> Tuple[str, str]:
     """
-    Reads optional [SANRI_MODE=...] tag.
+    Legacy: Reads optional [SANRI_MODE=...] tag.
     Returns (sanri_mode, cleaned_text).
     """
     m = MODE_TAG_RE.match(text or "")
@@ -94,11 +118,53 @@ def extract_mode_and_clean(text: str) -> Tuple[str, str]:
         return ("mirror", (text or "").strip())
 
     mode = (m.group(1) or "mirror").lower().strip()
-    if mode not in ALLOWED_MODES:
+    if mode not in ALLOWED_GATE_MODES:
         mode = "mirror"
 
     cleaned = MODE_TAG_RE.sub("", text, count=1).strip()
     return (mode, cleaned)
+
+
+def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
+    """
+    Normalize inputs across new + old clients.
+    Returns (req_dict, cleaned_text)
+    """
+    cleaned_text = (raw_text or "").strip()
+
+    # legacy tag in text
+    tag_mode, cleaned_text2 = extract_mode_and_clean(cleaned_text)
+    cleaned_text = cleaned_text2
+
+    # start with request fields
+    domain = (req.domain or "auto").strip() or "auto"
+    gate_mode = (req.gate_mode or "mirror").strip().lower() or "mirror"
+    persona = (req.persona or "user").strip() or "user"
+    plate = (req.plate or "").strip()
+
+    # backward compat: req.mode
+    if req.mode:
+        m = str(req.mode).strip().lower()
+        if m in ALLOWED_GATE_MODES:
+            gate_mode = m
+        else:
+            persona = str(req.mode).strip()  # user/test/cocuk vb.
+
+    # if gate_mode not explicitly set but tag exists, use tag
+    # (only if gate_mode is default mirror)
+    if gate_mode == "mirror" and tag_mode and tag_mode != "mirror":
+        gate_mode = tag_mode
+
+    if gate_mode not in ALLOWED_GATE_MODES:
+        gate_mode = "mirror"
+
+    req_dict = {
+        "domain": domain,
+        "gate_mode": gate_mode,
+        "persona": persona,
+        "plate": plate,
+    }
+    return req_dict, cleaned_text
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -109,22 +175,35 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     raw_text = req.text()
 
     if not raw_text:
-        return AskResponse(response="", session_id=session_id, prompt_version=SANRI_PROMPT_VERSION)
+        return AskResponse(
+            response="",
+            answer="",
+            session_id=session_id,
+            prompt_version=SANRI_PROMPT_VERSION,
+            module="mirror",
+            title="Sanrı",
+            sections=[],
+            tags=[],
+        )
 
-    # 1) Parse SANRI_MODE tag (only as a gentle hint)
-    sanri_mode, user_text = extract_mode_and_clean(raw_text)
+    # ✅ Normalize all inputs
+    req_dict, cleaned_text = normalize_req(req, raw_text)
 
-    # 2) Build system prompt ONLY from system_base (no extra format forcing)
-    system_prompt = build_system_prompt(req.mode)
+    # ✅ Choose module by domain
+    domain = req_dict["domain"]
+    module = REGISTRY.get(domain) or REGISTRY.get("auto")
+    if module is None:
+        raise HTTPException(status_code=500, detail="Module registry misconfigured (auto missing)")
 
-    # 3) If tag exists, we pass it as a subtle first line (NOT a format command)
-    if sanri_mode and sanri_mode != "mirror":
-        user_text = "(SANRI_MODE: " + sanri_mode + ")\n" + user_text
+    # ✅ Module preprocess → system/user prompts
+    ctx = module.preprocess(cleaned_text, req_dict)
+    system_prompt = module.build_system(req_dict, ctx)
+    user_payload = module.build_user(req_dict, ctx)
 
-    # 4) Build messages with memory
+    # ✅ Build messages with memory
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history_messages(session_id))
-    messages.append({"role": "user", "content": user_text})
+    messages.append({"role": "user", "content": user_payload})
 
     try:
         client = get_client()
@@ -149,8 +228,21 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     if not reply:
         reply = "Buradayım."
 
-    # 5) Save memory AFTER success
-    remember(session_id, "user", user_text)
+    # ✅ Postprocess per module (structured response)
+    out = module.postprocess(reply, req_dict, ctx) or {}
+    answer = (out.get("answer") or reply).strip()
+
+    # ✅ Save memory AFTER success
+    remember(session_id, "user", user_payload)
     remember(session_id, "assistant", reply)
 
-    return AskResponse(response=reply, session_id=session_id, prompt_version=SANRI_PROMPT_VERSION)
+    return AskResponse(
+        response=answer,  # backward compatibility
+        answer=answer,
+        session_id=session_id,
+        prompt_version=SANRI_PROMPT_VERSION,
+        module=str(out.get("module") or domain),
+        title=str(out.get("title") or "Sanrı"),
+        sections=list(out.get("sections") or []),
+        tags=list(out.get("tags") or []),
+    )

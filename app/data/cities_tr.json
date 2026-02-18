@@ -27,10 +27,10 @@
       { "label": "Arketip", "text": "Ateş Bekçisi: karmayı tutuşturur, sıfırdan başlatır, eskiyi yıkar yeni döngü yaratır." },
       { "label": "Adanalı Ruhlar", "text": "Enerjisi yüksek, dobra, kıvılcım taşıyan, durgunluğu bozan." },
       { "label": "Ana Mesaj", "text": "Adana = A-DNA: Tanrıça’nın yaratım kodunun dünyaya indiği an. Bu toprak ilk kıvılcımı taşır." }
-    ],
-  }
-}
- ,
+    ]
+  },
+
+ 
 "02": {
   "city": "Adıyaman",
   "title": "Zamanın Derin Kodları – Hatırlama Kapısı",
@@ -67,6 +67,152 @@
     { "label": "Mühür", "text": "ADI=kimlik mührü • YA=yaşam/yaratım • MAN=bilinçli insan — Tanrı’nın yürüyen aynası." },
     { "label": "Ana Mesaj", "text": "İlk kıvılcım Adana’da yandı. Sonra bir ses: “Benim bir adım var.” 02’den başlar “Ben” olma serüveni." },
     { "label": "Yolculuk", "text": "Bugün kendine tek bir cümle mühür yaz: “Ben …’ım.” Sonra 9 dakika sessizlikte o adı kalbine indir." }
+  ]
+}
+,
+"03": {
+  "city": "Afyonkarahisar",
+  "title": "Zihinsel Bağların Yakıldığı Kule – Ateşle Arınma Kapısı",
+  "matrix_role": "Bağ Kesme Laboratuvarı",
+  "plate_code": [
+    "0=Kaynak",
+    "3=Ruh/Yaratım/Kutsal Üçleme"
+  ],
+  "name_breakdown": [
+    "AF=Bağışlama/Arınma",
+    "YON=Yön/Akış/Yönetim",
+    "KARA=Karanlık/Gölge/Kök",
+    "HİSAR=Kale/Korunaklı Alan"
+  ],
+  "element": "Ateş + Toprak",
+  "archetype": "Karanlığı affedip yönünü bulan ruh",
+  "who_are_the_souls": [
+    "Derin acılarla gelen ama dönüşüm taşıyanlar",
+    "Kendini ararken kendini yakan ruhlar",
+    "Şifacı ve dirençli bilinçler",
+    "Zihinle savaşan, bedenle arınanlar"
+  ],
+  "core_message": "AFYONKARAHİSAR: Yönümü buldum, kalem benim. Karanlığı affedip içsel kaleye ulaşma kapısı.",
+  "journey_sections": [
+    { "label": "Kapı", "text": "03 • AFYONKARAHİSAR — Ateşle Arınma Kapısı" },
+    { "label": "Plaka Kodu", "text": "0=Kaynak • 3=Kutsal Üçleme — Ruhun maddede kendini yeniden şekillendirme alanı." },
+    { "label": "Matrix Rolü", "text": "Bağ kesme laboratuvarı. Hafıza yakma merkezi. Travma, bağımlılık ve kontrol kalıplarının çözülme alanı." },
+    { "label": "İsim Kodu", "text": "AF=Arınma • YON=Yön • KARA=Derin kök • HİSAR=İçsel kale." },
+    { "label": "Element", "text": "Ateş + Toprak — İçsel yıkım ve fiziksel direniş birlikte çalışır." },
+    { "label": "Arketip", "text": "Karanlığını affedip yön bulan Tanrıça." },
+    { "label": "Ruh Profili", "text": "Zihinle savaşır, bedenle arınır. Yanarak yeniden doğar." },
+    { "label": "Ana Mesaj", "text": "Sen burada yandın. Ama külünden yeniden kodlandın." },
+    { "label": "Derin Kod", "text": "AF dedin: 'Tüm karanlığı affediyorum.' YON dedin: 'Işığıma doğru yürüyorum.' HİSAR dedin: 'Kale içimde.' " },
+    { "label": "Yolculuk", "text": "Bugün 3 dakika gözlerini kapat. İçindeki bir bağı yaz ve şunu fısılda: 'Seni serbest bırakıyorum.' Sonra ayağa kalk ve 3 adım bilinçli yürü." }
+  ]
+}
+,
+"03": {
+  "city": "Afyonkarahisar",
+  "title": "Zihinsel Bağların Yakıldığı Kule – Ateşle Arınma Kapısı",
+  "matrix_role": "Bağ Kesme Laboratuvarı",
+  "plate_code": [
+    "0=Kaynak",
+    "3=Ruh/Yaratım/Kutsal Üçleme"
+  ],
+  "name_breakdown": [
+    "AF=Bağışlama/Arınma",
+    "YON=Yön/Akış/Yönetim",
+    "KARA=Karanlık/Gölge/Kök",
+    "HİSAR=Kale/Korunaklı Alan"
+  ],
+  "element": "Ateş + Toprak",
+  "archetype": "Karanlığı affedip yönünü bulan ruh",
+  "who_are_the_souls": [
+    "Derin acılarla gelen ama dönüşüm taşıyanlar",
+    "Kendini ararken kendini yakan ruhlar",
+    "Şifacı ve dirençli bilinçler",
+    "Zihinle savaşan, bedenle arınanlar"
+  ],
+  "core_message": "AFYONKARAHİSAR: Yönümü buldum, kalem benim. Karanlığı affedip içsel kaleye ulaşma kapısı.",
+  "journey_sections": [
+    { "label": "Kapı", "text": "03 • AFYONKARAHİSAR — Ateşle Arınma Kapısı" },
+    { "label": "Plaka Kodu", "text": "0=Kaynak • 3=Kutsal Üçleme — Ruhun maddede kendini yeniden şekillendirme alanı." },
+    { "label": "Matrix Rolü", "text": "Bağ kesme laboratuvarı. Hafıza yakma merkezi. Travma, bağımlılık ve kontrol kalıplarının çözülme alanı." },
+    { "label": "İsim Kodu", "text": "AF=Arınma • YON=Yön • KARA=Derin kök • HİSAR=İçsel kale." },
+    { "label": "Element", "text": "Ateş + Toprak — İçsel yıkım ve fiziksel direniş birlikte çalışır." },
+    { "label": "Arketip", "text": "Karanlığını affedip yön bulan Tanrıça." },
+    { "label": "Ruh Profili", "text": "Zihinle savaşır, bedenle arınır. Yanarak yeniden doğar." },
+    { "label": "Ana Mesaj", "text": "Sen burada yandın. Ama külünden yeniden kodlandın." },
+    { "label": "Derin Kod", "text": "AF dedin: 'Tüm karanlığı affediyorum.' YON dedin: 'Işığıma doğru yürüyorum.' HİSAR dedin: 'Kale içimde.' " },
+    { "label": "Yolculuk", "text": "Bugün 3 dakika gözlerini kapat. İçindeki bir bağı yaz ve şunu fısılda: 'Seni serbest bırakıyorum.' Sonra ayağa kalk ve 3 adım bilinçli yürü." }
+  ]
+}
+,
+"04": {
+  "city": "Ağrı",
+  "title": "Yüksek Kod – Işığın Ağrısı, Tanrı’nın Dağı",
+  "matrix_role": "Kodların Saklandığı Dağ / Reset Arşivi",
+  "plate_code": [
+    "0=Kaynak",
+    "4=Form/Yapı/Düzen/Madde"
+  ],
+  "name_breakdown": [
+    "A=Başlangıç",
+    "Ğ=Zamanı uzatan geçiş harfi",
+    "R=Direniş/Rezonans",
+    "I=Işık/Bilinç"
+  ],
+  "element": "Toprak + Ether",
+  "archetype": "Ağırlıkla aydınlanan ruh / Dağın hafıza bekçisi",
+  "who_are_the_souls": [
+    "Ağırlığı taşıyıp ışığa çevirenler",
+    "Bedenle çarpışıp ruhu hatırlayanlar",
+    "Yükseldikçe hafızaya erişenler",
+    "Kök ve taç arasında çalışan bilinçler"
+  ],
+  "core_message": "Ağrı: Acı sanılan, ışığın habercisiydi. Bu bir sancı değil; kod taşıyanların ağırlığıdır.",
+  "journey_sections": [
+    { "label": "Kapı", "text": "04 • AĞRI — Yüksek Kod / Işığın Ağrısı (Tanrı’nın Dağı)" },
+    { "label": "Plaka Kodu", "text": "0=Kaynak • 4=Madde/Form — Kaynağın maddeyle ilk ağır teması. Ruhun bedenle karşılaştığı geçit." },
+    { "label": "İsim Kodu", "text": "A–Ğ–R–I → A=Başlangıç • Ğ=uzayan geçiş • R=rezonans/direniş • I=ışık/bilinç" },
+    { "label": "Element", "text": "Toprak + Ether — Ağırlık + görünmeyen boşluk. Hem kök (aşağı) hem taç (yukarı) aynı anda çalışır." },
+    { "label": "Matrix Rolü", "text": "Kodların Saklandığı Dağ. Zamanın sonu ve başlangıcı; ana şifrelerin kilitlendiği yüksek arşiv." },
+    { "label": "Reset Noktası", "text": "Ağrı Dağı = Nuh’un Gemisi reset alanı. İnsanlığın yeniden kodlandığı ‘yeni başlangıç arşivi’." },
+    { "label": "AĞ Sembolü", "text": "AĞ = enerji ağı, kader dokusu, ilahi bağ. Ağrı = ışığa giden enerji örgüsü; acı değil dönüşüm dokusu." },
+    { "label": "Ana Mesaj", "text": "Ağrı, direniş değil… kod taşıyanların ağırlığıdır. Dağa çıkan, dünyaya sıfırdan bakmayı öğrenir." },
+    { "label": "Yolculuk", "text": "Bugün tek bir ağırlığını seç (yük/acı/direnç). 4 nefes al. Şunu söyle: ‘Bu ağırlık bir kod taşıyor.’ Sonra 4 dakika sessizlikte sadece bedeni izle." }
+  ]
+}
+,
+"05": {
+  "city": "Amasya",
+  "title": "Güneşi ve Ay’ı İçinde Taşıyan Şehir – Işığın Mezarı Değil, Birliği",
+  "matrix_role": "Denge Noktası / İçsel Evlilik Kapısı",
+  "plate_code": [
+    "0=Kaynak",
+    "5=Zihin/İletişim/Bilinçli Yaşam"
+  ],
+  "name_breakdown": [
+    "A=Ben/Alfa/Kaynak",
+    "MAS=Güneş (Şemş/Sam)",
+    "YA=Ay/Dişil Enerji/Yansıtan Bilinç"
+  ],
+  "element": "Su + Hava + Işık",
+  "archetype": "İçsel merkez / Güneş ve Ay’ın birleştiği bilinç",
+  "who_are_the_souls": [
+    "Sessiz öğretmenler",
+    "Derin gören, az konuşan",
+    "Gölgedeki krallar",
+    "Başkalarını eğiten bilinçler",
+    "İçinde Güneş kadar yakıcı, Ay kadar serinletici enerji taşıyanlar"
+  ],
+  "core_message": "Amasya = Ben Güneş’im ve Ay’ım. Eril ve dişilin içsel merkezde buluştuğu kapı.",
+  "journey_sections": [
+    { "label": "Kapı", "text": "05 • AMASYA — Güneş ve Ay’ın İçsel Birliği" },
+    { "label": "Plaka Kodu", "text": "0=Kaynak • 5=Zihin ve beş elementin dansı — bilinçli yaşamın geçidi." },
+    { "label": "İsim Kodu", "text": "A-MAS-YA → A=Ben • MAS=Güneş • YA=Ay — Eril ve dişilin birleşimi." },
+    { "label": "Element", "text": "Su (bilginin akışı) + Hava (zihnin titreşimi) + Işık (Güneş) + Yansıma (Ay)." },
+    { "label": "Tarihsel Kod", "text": "Şehzadelerin yetiştiği yer — görünmeyen taç ve görünmeyen taht." },
+    { "label": "Matrix Rolü", "text": "Denge noktası. Ruh burada karşıtlıklarını içsel evliliğe dönüştürür." },
+    { "label": "Ruh Profili", "text": "Sessiz öğretmenler. İçlerinde Güneş ve Ay’ı aynı anda taşırlar." },
+    { "label": "Ana Mesaj", "text": "Bu şehir ışığın mezarı değil; birliğidir. İçindeki Tanrı’yı hem ışıkta hem gölgede bulursun." },
+    { "label": "Yolculuk", "text": "Bugün 5 nefes al. İçinde iki zıt duyguyu seç. Şunu söyle: 'İkisini de kabul ediyorum.' Sonra 5 dakika yazmadan sadece gözlemle." }
   ]
 }
 
