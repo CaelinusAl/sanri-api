@@ -1,0 +1,32 @@
+{
+  "01": {
+    "city": "Adana",
+    "title": "Kodların Başlangıcı – Ateşin Kapısı",
+    "matrix_role": "Işığın yeryüzüne nadir inişi / ilk kod inişi",
+    "plate_code": ["0=Boşluk/Kaynak", "1=Başlangıç/Bilinç/Yaratıcı"],
+    "name_breakdown": [
+      "A=Alfa/Başlangıç/Işık",
+      "DA=yerde olma",
+      "NA=nadir/reddediş"
+    ],
+    "element": "Ateş",
+    "archetype": "Ateş Bekçisi / Reset Düğmesi",
+    "who_are_the_souls": [
+      "Enerjisi yüksek",
+      "Dobra",
+      "Kıvılcım olan kişiler",
+      "Durgunluğu bozar"
+    ],
+    "core_message": "Bu bir şehir değil... Bu Tanrıçanın DNA’sıdır. A-DNA: Tanrıçanın kodu indiği an.",
+    "journey_sections": [
+      { "label": "Kapı", "text": "01 • ADANA — Kodların Başlangıcı / Ateşin Kapısı" },
+      { "label": "Matrix Rolü", "text": "Işığın yeryüzüne nadir inişi / ilk kod inişi" },
+      { "label": "Plaka Kodu", "text": "0=Boşluk/Kaynak • 1=Başlangıç/Bilinç/Yaratıcı" },
+      { "label": "İsim Kodu", "text": "A=Alfa/Işık • DA=yerde olma • NA=nadir/reddediş" },
+      { "label": "Element", "text": "Ateş: dönüştürür, yakar, arındırır; aynı zamanda başlatır." },
+      { "label": "Arketip", "text": "Ateş Bekçisi: karmayı tutuşturur, sıfırdan başlatır, eskiyi yıkar yeni döngü yaratır." },
+      { "label": "Adanalı Ruhlar", "text": "Enerjisi yüksek, dobra, kıvılcım taşıyan, durgunluğu bozan." },
+      { "label": "Ana Mesaj", "text": "Adana = A-DNA: Tanrıça’nın yaratım kodunun dünyaya indiği an. Bu toprak ilk kıvılcımı taşır." }
+    ]
+  }
+}

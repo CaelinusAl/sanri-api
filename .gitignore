@@ -9,7 +9,7 @@ _pycache_/
 .venv/
 
 # runtime data
-data/
+
 data_OLD/
 
 
