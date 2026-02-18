@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from openai import OpenAI
 
 from app.prompts.system_base import SANRI_PROMPT_VERSION
-from app.modules.registry import REGISTRY  # ✅ domain -> module map
+
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
