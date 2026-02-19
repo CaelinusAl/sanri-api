@@ -42,8 +42,17 @@ def matrix_rol(req: MatrixRolRequest):
         raise HTTPException(status_code=400, detail="name is required")
     if not (req.birth_date or "").strip():
         raise HTTPException(status_code=400, detail="birth_date is required")
-    return analyze_matrix_role(req.name, req.birth_date)
 
+    base = analyze_matrix_role(req.name, req.birth_date)
+
+    # ✅ Free teaser (merak açılımı)
+    teaser = (
+        f"Çekirdek Rol: {base.get('matrix_role')}\n\n"
+        f"Gölge İpucu: Bu rolün gölgesi, kontrolü elden bırakmamak ve her şeyi tek başına taşımaktır.\n\n"
+        f"Bugün 1 Adım: 1 şeyi tamamla, 1 şeyi bırak."
+    )
+
+    return {**base, "teaser": teaser}
 
 @router.post("/yorum")
 def matrix_rol_yorum(
