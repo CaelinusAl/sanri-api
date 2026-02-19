@@ -11,6 +11,7 @@ from app.routes.auth import router as auth_router
 from app.routes.subscription import router as subscription_router
 from app.routes.awakenmis_sehirler import router as awakened_cities_router
 from app.routes.matrix_rol import router as matrix_rol_router
+from app.routes.premium_status import router as premium_router
 
 
 
@@ -98,5 +99,6 @@ app.include_router(subscription_router)
 app.include_router(admin_router)
 app.include_router(awakened_cities_router)
 app.include_router(matrix_rol_router)
+app.include_router(premium_router)
 
 
