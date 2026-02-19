@@ -2,6 +2,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import app.models.user  # noqa
+import app.models.user_profile  # noqa
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
