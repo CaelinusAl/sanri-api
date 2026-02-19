@@ -45,16 +45,51 @@ def matrix_rol(req: MatrixRolRequest):
 
     base = analyze_matrix_role(req.name, req.birth_date)
 
-    # ✅ Free teaser (merak açılımı)
+    name_number = int(base.get("name_number") or 0)
+    life_path = int(base.get("life_path") or 0)
+
+    # --- küçük kişisel mapping ---
+    NAME_MAP = {
+        1: ("Öncü", "başlatırsın", "aceleyle kırarsın"),
+        2: ("Bağ Kurucu", "uzlaştırırsın", "fazla yük alırsın"),
+        3: ("Yaratıcı / İfade", "ilham yayırsın", "dağılabilirsin"),
+        4: ("Kurucu", "sistem kurarsın", "katılaşabilirsin"),
+        5: ("Değişim", "kapı açarsın", "istikrarsızlaşabilirsin"),
+        6: ("Şifacı", "iyileştirirsin", "herkesi kurtarmaya çalışırsın"),
+        7: ("Bilge", "derin görürsün", "fazla içe kapanırsın"),
+        8: ("Güç / Yönetim", "inşa edersin", "kontrol edebilirsin"),
+        9: ("Tamamlayıcı", "kapanış açarsın", "fazla fedakâr olabilirsin"),
+        11: ("Uyanış / İlham", "ışık getirirsin", "aşırı hassaslaşabilirsin"),
+        22: ("Usta Kurucu", "büyük yapı kurarsın", "yükün altında ezilebilirsin"),
+        33: ("Usta Şifa / Rehber", "rehberlik edersin", "sınır koymayı unutabilirsin"),
+    }
+
+    LP_MAP = {
+        1: ("Başlatma", "tek bir karar al", "ertelemeyi kes"),
+        2: ("Uyum", "bir ilişkiyi yumuşat", "kırılganlığı yönet"),
+        3: ("İfade", "tek bir cümle yaz", "dağınıklığı toparla"),
+        4: ("Düzen", "bir sistemi tamamla", "katılığı gevşet"),
+        5: ("Özgürlük", "bir değişim yap", "savrukluğu kes"),
+        6: ("Hizmet", "birine şifa ver", "kendini ihmal etme"),
+        7: ("İçgörü", "10 dk sessizlik", "yalnızlığa kaçma"),
+        8: ("Güç", "bir hedef koy", "kontrol takıntısını bırak"),
+        9: ("Tamamlama", "yarım kalan bir şeyi bitir", "fazla yüklenme"),
+        11: ("Uyanış", "bir işaret seç", "duyusal aşırılığa dikkat"),
+        22: ("Ustalık", "bir yapı planla", "mükemmeliyetçiliği bırak"),
+        33: ("Rehberlik", "bir kişiyi yükselt", "kurtarıcı moduna girme"),
+    }
+
+    n_title, n_light, n_shadow = NAME_MAP.get(name_number, ("Öz", "yol açarsın", "yorulabilirsin"))
+    lp_title, lp_step, lp_warn = LP_MAP.get(life_path, ("Yol", "tek bir adım at", "dağılma"))
+
     teaser = (
         f"Çekirdek Rol: {base.get('matrix_role')}\n\n"
-        f"Gölge İpucu: Bu rolün gölgesi, kontrolü elden bırakmamak ve her şeyi tek başına taşımaktır.\n\n"
-        f"Bugün 1 Adım: 1 şeyi tamamla, 1 şeyi bırak."
+        f"Işık Frekansı: {n_title} — bu yaşamda {n_light}.\n"
+        f"Gölge İpucu: {n_shadow}. ({lp_warn})\n\n"
+        f"Bugün 1 Adım: {lp_step}."
     )
 
-    return {**base, "teaser": teaser}
-
-@router.post("/yorum")
+    return {**base, "teaser": teaser}@router.post("/yorum")
 def matrix_rol_yorum(
     req: MatrixRolYorumRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
