@@ -20,7 +20,7 @@ from app.routes.premium_status import router as premium_router
 
 
 from app.db import engine
-from app.models import Base
+from app.db import Base
 
 
 def _split_origins(v: str) -> list[str]:
