@@ -1,9 +1,17 @@
 import os
-from fastapi import APIRouter, HTTPException
+from datetime import datetime, timedelta, timezone
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from openai import OpenAI
 
 from app.services.matrix_role import analyze_matrix_role
+from app.services.premium_guard import (
+    get_user_or_401,
+    enforce_premium_or_403,
+    enforce_self_only_or_403,
+    enforce_30d_rule_or_403,
+    mark_matrix_deep_used,
+)
 
 router = APIRouter(prefix="/matrix-rol", tags=["matrix-rol"])
 
@@ -35,12 +43,29 @@ def matrix_rol(req: MatrixRolRequest):
     return analyze_matrix_role(req.name, req.birth_date)
 
 @router.post("/yorum")
-def matrix_rol_yorum(req: MatrixRolYorumRequest):
+def matrix_rol_yorum(
+    req: MatrixRolYorumRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+):
+    # 0) input validate
     if not (req.name or "").strip():
         raise HTTPException(status_code=400, detail="name is required")
     if not (req.birth_date or "").strip():
         raise HTTPException(status_code=400, detail="birth_date is required")
 
+    # 1) user fetch (şimdilik header ile)
+    user = get_user_or_401(x_user_id)
+
+    # 2) premium kontrol
+    enforce_premium_or_403(user)
+
+    # 3) sadece kendi adı/doğum tarihi (self-only)
+    enforce_self_only_or_403(user, req.name, req.birth_date)
+
+    # 4) 30 günde 1 kuralı
+    enforce_30d_rule_or_403(user)
+
+    # 5) base hesap
     base = analyze_matrix_role(req.name, req.birth_date)
 
     system = (
@@ -53,7 +78,7 @@ def matrix_rol_yorum(req: MatrixRolYorumRequest):
         "5) Dil: Türkçe. Ton: sakin, net, güçlü.\n"
     )
 
-    user = (
+    user_prompt = (
         f"İsim: {base.get('name_normalized')}\n"
         f"İsim Sayısı: {base.get('name_number')} ({base.get('name_archetype')})\n"
         f"Yaşam Yolu: {base.get('life_path')} ({base.get('life_path_archetype')})\n"
@@ -69,10 +94,13 @@ def matrix_rol_yorum(req: MatrixRolYorumRequest):
     client = get_client()
     completion = client.chat.completions.create(
         model=MODEL_NAME,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user_prompt}],
         temperature=TEMPERATURE,
         max_tokens=MAX_TOKENS,
     )
     yorum = (completion.choices[0].message.content or "").strip() or "Buradayım."
+
+    # 6) kullanım damgası (başarılıysa)
+    mark_matrix_deep_used(user)
 
     return {"base": base, "yorum": yorum}
