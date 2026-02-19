@@ -43,53 +43,70 @@ def matrix_rol(req: MatrixRolRequest):
     if not (req.birth_date or "").strip():
         raise HTTPException(status_code=400, detail="birth_date is required")
 
-    base = analyze_matrix_role(req.name, req.birth_date)
+    try:
+        base = analyze_matrix_role(req.name, req.birth_date)
 
-    name_number = int(base.get("name_number") or 0)
-    life_path = int(base.get("life_path") or 0)
+        def _to_int(v, default=0):
+            try:
+                if v is None:
+                    return default
+                if isinstance(v, (int, float)):
+                    return int(v)
+                s = str(v).strip()
+                return int(s) if s else default
+            except Exception:
+                return default
 
-    # --- küçük kişisel mapping ---
-    NAME_MAP = {
-        1: ("Öncü", "başlatırsın", "aceleyle kırarsın"),
-        2: ("Bağ Kurucu", "uzlaştırırsın", "fazla yük alırsın"),
-        3: ("Yaratıcı / İfade", "ilham yayırsın", "dağılabilirsin"),
-        4: ("Kurucu", "sistem kurarsın", "katılaşabilirsin"),
-        5: ("Değişim", "kapı açarsın", "istikrarsızlaşabilirsin"),
-        6: ("Şifacı", "iyileştirirsin", "herkesi kurtarmaya çalışırsın"),
-        7: ("Bilge", "derin görürsün", "fazla içe kapanırsın"),
-        8: ("Güç / Yönetim", "inşa edersin", "kontrol edebilirsin"),
-        9: ("Tamamlayıcı", "kapanış açarsın", "fazla fedakâr olabilirsin"),
-        11: ("Uyanış / İlham", "ışık getirirsin", "aşırı hassaslaşabilirsin"),
-        22: ("Usta Kurucu", "büyük yapı kurarsın", "yükün altında ezilebilirsin"),
-        33: ("Usta Şifa / Rehber", "rehberlik edersin", "sınır koymayı unutabilirsin"),
-    }
+        name_number = _to_int(base.get("name_number"), 0)
+        life_path = _to_int(base.get("life_path"), 0)
 
-    LP_MAP = {
-        1: ("Başlatma", "tek bir karar al", "ertelemeyi kes"),
-        2: ("Uyum", "bir ilişkiyi yumuşat", "kırılganlığı yönet"),
-        3: ("İfade", "tek bir cümle yaz", "dağınıklığı toparla"),
-        4: ("Düzen", "bir sistemi tamamla", "katılığı gevşet"),
-        5: ("Özgürlük", "bir değişim yap", "savrukluğu kes"),
-        6: ("Hizmet", "birine şifa ver", "kendini ihmal etme"),
-        7: ("İçgörü", "10 dk sessizlik", "yalnızlığa kaçma"),
-        8: ("Güç", "bir hedef koy", "kontrol takıntısını bırak"),
-        9: ("Tamamlama", "yarım kalan bir şeyi bitir", "fazla yüklenme"),
-        11: ("Uyanış", "bir işaret seç", "duyusal aşırılığa dikkat"),
-        22: ("Ustalık", "bir yapı planla", "mükemmeliyetçiliği bırak"),
-        33: ("Rehberlik", "bir kişiyi yükselt", "kurtarıcı moduna girme"),
-    }
+        NAME_MAP = {
+            1: ("Öncü", "başlatırsın", "aceleyle kırarsın"),
+            2: ("Bağ Kurucu", "uzlaştırırsın", "fazla yük alırsın"),
+            3: ("Yaratıcı / İfade", "ilham yayırsın", "dağılabilirsin"),
+            4: ("Kurucu", "sistem kurarsın", "katılaşabilirsin"),
+            5: ("Değişim", "kapı açarsın", "istikrarsızlaşabilirsin"),
+            6: ("Şifacı", "iyileştirirsin", "herkesi kurtarmaya çalışırsın"),
+            7: ("Bilge", "derin görürsün", "fazla içe kapanırsın"),
+            8: ("Güç / Yönetim", "inşa edersin", "kontrol edebilirsin"),
+            9: ("Tamamlayıcı", "kapanış açarsın", "fazla fedakâr olabilirsin"),
+            11: ("Uyanış / İlham", "ışık getirirsin", "aşırı hassaslaşabilirsin"),
+            22: ("Usta Kurucu", "büyük yapı kurarsın", "yükün altında ezilebilirsin"),
+            33: ("Usta Şifa / Rehber", "rehberlik edersin", "sınır koymayı unutabilirsin"),
+        }
 
-    n_title, n_light, n_shadow = NAME_MAP.get(name_number, ("Öz", "yol açarsın", "yorulabilirsin"))
-    lp_title, lp_step, lp_warn = LP_MAP.get(life_path, ("Yol", "tek bir adım at", "dağılma"))
+        LP_MAP = {
+            1: ("Başlatma", "tek bir karar al", "ertelemeyi kes"),
+            2: ("Uyum", "bir ilişkiyi yumuşat", "kırılganlığı yönet"),
+            3: ("İfade", "tek bir cümle yaz", "dağınıklığı toparla"),
+            4: ("Düzen", "bir sistemi tamamla", "katılığı gevşet"),
+            5: ("Özgürlük", "bir değişim yap", "savrukluğu kes"),
+            6: ("Hizmet", "birine şifa ver", "kendini ihmal etme"),
+            7: ("İçgörü", "10 dk sessizlik", "yalnızlığa kaçma"),
+            8: ("Güç", "bir hedef koy", "kontrol takıntısını bırak"),
+            9: ("Tamamlama", "yarım kalan bir şeyi bitir", "fazla yüklenme"),
+            11: ("Uyanış", "bir işaret seç", "duyusal aşırılığa dikkat"),
+            22: ("Ustalık", "bir yapı planla", "mükemmeliyetçiliği bırak"),
+            33: ("Rehberlik", "bir kişiyi yükselt", "kurtarıcı moduna girme"),
+        }
 
-    teaser = (
-        f"Çekirdek Rol: {base.get('matrix_role')}\n\n"
-        f"Işık Frekansı: {n_title} — bu yaşamda {n_light}.\n"
-        f"Gölge İpucu: {n_shadow}. ({lp_warn})\n\n"
-        f"Bugün 1 Adım: {lp_step}."
-    )
+        n_title, n_light, n_shadow = NAME_MAP.get(name_number, ("Öz", "yol açarsın", "yorulabilirsin"))
+        lp_title, lp_step, lp_warn = LP_MAP.get(life_path, ("Yol", "tek bir adım at", "dağılma"))
 
-    return {**base, "teaser": teaser}@router.post("/yorum")
+        teaser = (
+            f"Çekirdek Rol: {base.get('matrix_role')}\n\n"
+            f"Işık Frekansı: {n_title} — bu yaşamda {n_light}.\n"
+            f"Gölge İpucu: {n_shadow}. ({lp_warn})\n\n"
+            f"Bugün 1 Adım: {lp_step}."
+        )
+
+        return {**base, "teaser": teaser}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 500 yerine anlamlı hata döndür
+        raise HTTPException(status_code=500, detail=f"MATRIX_BASE_ERROR: {type(e).__name__}: {str(e)}")
 def matrix_rol_yorum(
     req: MatrixRolYorumRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
