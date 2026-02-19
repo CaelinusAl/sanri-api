@@ -1,24 +1,15 @@
 import os
-from fastapi import Depends
-from app.db import get_db
-from sqlalchemy.orm import Session
-from app.services.user_repo import get_or_create_user
-from app.services.premium_guard_db import ensure_premium, ensure_self_only, ensure_30_days
 from datetime import datetime
-from app.models.user_profile import UserProfile
-from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from openai import OpenAI
 
+from app.db import get_db
 from app.services.matrix_role import analyze_matrix_role
-from app.services.premium_guard import (
-    get_user_or_401,
-    enforce_premium_or_403,
-    enforce_self_only_or_403,
-    enforce_30d_rule_or_403,
-    mark_matrix_deep_used,
-)
+from app.services.user_repo import get_or_create_user
+from app.services.premium_guard_db import ensure_premium, ensure_self_only, ensure_30_days
+from app.models.user_profile import UserProfile
 
 router = APIRouter(prefix="/matrix-rol", tags=["matrix-rol"])
 
@@ -26,20 +17,24 @@ MODEL_NAME = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 TEMPERATURE = float(os.getenv("SANRI_TEMPERATURE", "0.45"))
 MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "900"))
 
+
 def get_client() -> OpenAI:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing or empty")
     return OpenAI(api_key=api_key)
 
+
 class MatrixRolRequest(BaseModel):
     name: str
     birth_date: str
+
 
 class MatrixRolYorumRequest(BaseModel):
     name: str
     birth_date: str
     context: str | None = None
+
 
 @router.post("")
 def matrix_rol(req: MatrixRolRequest):
@@ -48,6 +43,7 @@ def matrix_rol(req: MatrixRolRequest):
     if not (req.birth_date or "").strip():
         raise HTTPException(status_code=400, detail="birth_date is required")
     return analyze_matrix_role(req.name, req.birth_date)
+
 
 @router.post("/yorum")
 def matrix_rol_yorum(
@@ -63,21 +59,47 @@ def matrix_rol_yorum(
     if not (req.birth_date or "").strip():
         raise HTTPException(status_code=400, detail="birth_date is required")
 
+    # 1) user
     user = get_or_create_user(db, x_user_id)
 
-    # premium + self-only + 30 gün
+    # 2) premium + self-only + 30 gün
     ensure_premium(user)
     ensure_self_only(user, req.name, req.birth_date)
     ensure_30_days(user)
 
-    # ilk kullanımda profili kilitle
+    # 3) ilk kullanımda profili kilitle
     if not user.name and not user.birth_date:
         user.name = req.name.strip()
         user.birth_date = req.birth_date.strip()
 
+    # 4) deterministik base
     base = analyze_matrix_role(req.name, req.birth_date)
 
-    # LLM yorumu
+    # 5) LLM yorum promptu
+    system = (
+        "Sen SANRI'nin Matrix Rol yorum katmanısın.\n"
+        "Kurallar:\n"
+        "1) Deterministik değerleri ASLA değiştirme.\n"
+        "2) Soru sorma. Kullanıcıyı yormadan rehberlik ver.\n"
+        "3) 3 katman yaz: Kişisel Rol, Kolektif Rol, Ruh Görevi.\n"
+        "4) Sonunda 'Bugün 1 Adım' ekle.\n"
+        "5) Dil: Türkçe. Ton: sakin, net, güçlü.\n"
+    )
+
+    user_prompt = (
+        f"İsim: {base.get('name_normalized')}\n"
+        f"İsim Sayısı: {base.get('name_number')} ({base.get('name_archetype')})\n"
+        f"Yaşam Yolu: {base.get('life_path')} ({base.get('life_path_archetype')})\n"
+        f"Matrix Rol: {base.get('matrix_role')}\n"
+        f"Bağlam: {req.context or '(yok)'}\n\n"
+        "FORMAT:\n"
+        "KİŞİSEL ROL:\n- (3-6 madde)\n"
+        "KOLEKTİF ROL:\n- (3-6 madde)\n"
+        "RUH GÖREVİ:\n- (3-6 madde)\n"
+        "BUGÜN 1 ADIM:\n- (tek cümle)\n"
+    )
+
+    # 6) LLM call
     client = get_client()
     completion = client.chat.completions.create(
         model=MODEL_NAME,
@@ -87,23 +109,24 @@ def matrix_rol_yorum(
     )
     yorum = (completion.choices[0].message.content or "").strip() or "Buradayım."
 
-    # ✅ başarılıysa sayaç bas
+    # 7) başarılıysa sayaç bas + profil hafıza güncelle
     user.last_matrix_deep_analysis = datetime.utcnow()
     db.add(user)
 
-    # ✅ profil hafıza güncelle (kısa özet)
-    data = {
+    profile_data = {
         "name_normalized": base.get("name_normalized"),
         "name_number": base.get("name_number"),
         "life_path": base.get("life_path"),
         "matrix_role": base.get("matrix_role"),
         "last_context": (req.context or "").strip(),
+        "last_deep_at": user.last_matrix_deep_analysis.isoformat(),
     }
+
     prof = db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
     if not prof:
-        prof = UserProfile(user_id=user.id, data=data)
+        prof = UserProfile(user_id=user.id, data=profile_data)
     else:
-        prof.data = {**(prof.data or {}), **data}
+        prof.data = {**(prof.data or {}), **profile_data}
     db.add(prof)
 
     db.commit()
