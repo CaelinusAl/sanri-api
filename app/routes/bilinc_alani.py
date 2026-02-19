@@ -5,6 +5,7 @@ import time
 import traceback
 from collections import defaultdict, deque
 from typing import Optional, Deque, Dict, List, Tuple, Any
+from app.modules.registry import REGISTRY
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
