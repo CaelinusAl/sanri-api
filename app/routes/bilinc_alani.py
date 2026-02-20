@@ -198,8 +198,10 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     messages.extend(history_messages(session_id))
     messages.append({"role": "user", "content": user_payload})
 
-    try:
         client = get_client()
+
+    try:
+        
 
         completion = client.chat.completions.create(
             model=MODEL_NAME,
