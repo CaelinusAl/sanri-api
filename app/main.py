@@ -14,7 +14,7 @@ from app.routes.awakenmis_sehirler import router as awakened_cities_router
 from app.routes.matrix_rol import router as matrix_rol_router
 
 from app.db import engine
-from app.models import Base
+from app.models.base import Base
 
 
 def _split_origins(v: str) -> list[str]:
