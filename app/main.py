@@ -29,7 +29,7 @@ def _split_origins(v: str) -> list[str]:
     return out
 
 
-app = FastAP(title="SANR AP")
+app = FastAPI(title="SANRI API")
 
 
 @app.get("/")
