@@ -207,61 +207,56 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     messages.append({"role": "user", "content": user_payload})
 
     try:
-    completion = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=messages,
-        temperature=TEMPERATURE,
-        max_tokens=MAX_TOKENS,
-    )
-
-    reply = (completion.choices[0].message.content or "").strip()
-
-    def enforce_structure(text: str) -> str:
-        sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇİM ALANI", "TEK SORU"]
-        missing = [s for s in sections if s not in text.upper()]
-
-        if not missing:
-            return text
-
-        return (
-            "GÖZLEM:\n" + text[:200] + "\n\n"
-            "KIRILMA NOKTASI:\nBurada görünmeyen bir seçim var.\n\n"
-            "SEÇİM ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
-            "TEK SORU:\nGerçekten neyi seçiyorsun?"
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
         )
 
-    reply = enforce_structure(reply)
+        reply = (completion.choices[0].message.content or "").strip()
 
-except Exception as e:
-    print("🔥 SANRI LLM ERROR 🔥")
-    print(repr(e))
-    print(traceback.format_exc())
-    print("PROMPT_VERSION:", SANRI_PROMPT_VERSION)
-    print("SESSION:", session_id)
-    raise HTTPException(status_code=500, detail="LLM_ERROR: " + str(e))
+        def enforce_structure(text: str) -> str:
+            sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇİM ALANI", "TEK SORU"]
+            missing = [s for s in sections if s not in (text or "").upper()]
+            if not missing:
+                return text
 
+            return (
+                "GÖZLEM:\n" + (text or "")[:200] + "\n\n"
+                "KIRILMA NOKTASI:\nBurada görünmeyen bir seçim var.\n\n"
+                "SEÇİM ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
+                "TEK SORU:\nGerçekten neyi seçiyorsun?"
+            )
 
-if not reply:
-    reply = "Buradayım."
+        reply = enforce_structure(reply)
 
+    except Exception as e:
+        print("🔥 SANRI LLM ERROR 🔥")
+        print(repr(e))
+        print(traceback.format_exc())
+        print("PROMPT_VERSION:", SANRI_PROMPT_VERSION)
+        print("SESSION:", session_id)
+        raise HTTPException(status_code=500, detail="LLM_ERROR: " + str(e))
 
-# Postprocess
-out = module.postprocess(reply, req_dict, ctx) or {}
-answer = (out.get("answer") or reply).strip()
+    if not reply:
+        reply = "Buradayım."
 
+    # ✅ Postprocess per module (structured response)
+    out = module.postprocess(reply, req_dict, ctx) or {}
+    answer = (out.get("answer") or reply).strip()
 
-# Save memory
-remember(session_id, "user", user_payload)
-remember(session_id, "assistant", reply)
+    # ✅ Save memory AFTER success
+    remember(session_id, "user", user_payload)
+    remember(session_id, "assistant", reply)
 
-
-return AskResponse(
-    response=answer,
-    answer=answer,
-    session_id=session_id,
-    prompt_version=SANRI_PROMPT_VERSION,
-    module=str(out.get("module") or domain),
-    title=str(out.get("title") or "Sanrı"),
-    sections=list(out.get("sections") or []),
-    tags=list(out.get("tags") or []),
-)
+    return AskResponse(
+        response=answer, # backward compatibility
+        answer=answer,
+        session_id=session_id,
+        prompt_version=SANRI_PROMPT_VERSION,
+        module=str(out.get("module") or domain),
+        title=str(out.get("title") or "Sanrı"),
+        sections=list(out.get("sections") or []),
+        tags=list(out.get("tags") or []),
+    )
