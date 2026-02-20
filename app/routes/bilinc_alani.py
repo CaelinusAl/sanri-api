@@ -1,4 +1,4 @@
-ï»¿# app/routes/bilinc_alani.py
+# app/routes/bilinc_alani.py
 import os
 import re
 import time
@@ -22,10 +22,13 @@ MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "1200"))
 MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10"))
 MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200"))
 
-MEM: Dict[str, Deque[Tuple[str, str]]] = defaultdict(lambda: deque(maxlen=MEM_TURNS * 2))
+MEM: Dict[str, Deque[Tuple[str, str]]] = defaultdict(
+    lambda: deque(maxlen=MEM_TURNS * 2))
 LAST_SEEN: Dict[str, float] = {}
 
-MODE_TAG_RE = re.compile(r"^\s*\[SANRI[\s]?MODE\s*=\s*([a-zA-Z0-9-]+)\s*\]\s*", re.IGNORECASE)
+MODE_TAG_RE = re.compile(
+    r"^\s*\[SANRI[\s]?MODE\s*=\s*([a-zA-Z0-9-]+)\s*\]\s*",
+    re.IGNORECASE)
 ALLOWED_GATE_MODES = {"mirror", "dream", "divine", "shadow", "light"}
 
 
@@ -51,7 +54,7 @@ class AskResponse(BaseModel):
     prompt_version: str
 
     module: str = "mirror"
-    title: str = "SanrÄ±"
+    title: str = "Sanrý"
     answer: str = ""
     sections: List[dict] = []
     tags: List[str] = []
@@ -60,7 +63,8 @@ class AskResponse(BaseModel):
 def get_client() -> OpenAI:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing or empty")
+        raise HTTPException(status_code=500,
+                            detail="OPENAI_API_KEY missing or empty")
     return OpenAI(api_key=api_key)
 
 
@@ -102,7 +106,8 @@ def extract_mode_and_clean(text: str) -> Tuple[str, str]:
     return (mode, cleaned)
 
 
-def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
+def normalize_req(
+        req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
     cleaned_text = (raw_text or "").strip()
 
     tag_mode, cleaned_text = extract_mode_and_clean(cleaned_text)
@@ -137,18 +142,18 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
 def enforce_structure(text: str) -> str:
     t = (text or "").strip()
     if not t:
-        return "GÃ–ZLEM:\n...\n\nKIRILMA NOKTASI:\n...\n\nSEÃ‡Ä°M ALANI:\n...\n\nTEK SORU:\nGerÃ§ekten neyi seÃ§iyorsun?"
+        return "GÖZLEM:\n...\n\nKIRILMA NOKTASI:\n...\n\nSEÇÝM ALANI:\n...\n\nTEK SORU:\nGerçekten neyi seçiyorsun?"
 
-    sections = ["GÃ–ZLEM", "KIRILMA NOKTASI", "SEÃ‡Ä°M ALANI", "TEK SORU"]
+    sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇÝM ALANI", "TEK SORU"]
     upper = t.upper()
     if all(s in upper for s in sections):
         return t
 
     return (
-        "GÃ–ZLEM:\n" + t[:240] + "\n\n"
-        "KIRILMA NOKTASI:\nBurada gÃ¶rÃ¼nmeyen bir seÃ§im var.\n\n"
-        "SEÃ‡Ä°M ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
-        "TEK SORU:\nGerÃ§ekten neyi seÃ§iyorsun?"
+        "GÖZLEM:\n" + t[:240] + "\n\n"
+        "KIRILMA NOKTASI:\nBurada görünmeyen bir seçim var.\n\n"
+        "SEÇÝM ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
+        "TEK SORU:\nGerçekten neyi seçiyorsun?"
     )
 
 
@@ -166,7 +171,7 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
             session_id=session_id,
             prompt_version=SANRI_PROMPT_VERSION,
             module="mirror",
-            title="SanrÄ±",
+            title="Sanrý",
             sections=[],
             tags=[],
         )
@@ -176,7 +181,9 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     domain = req_dict["domain"]
     module = REGISTRY.get(domain) or REGISTRY.get("auto")
     if module is None:
-        raise HTTPException(status_code=500, detail="Module registry misconfigured (auto missing)")
+        raise HTTPException(
+            status_code=500,
+            detail="Module registry misconfigured (auto missing)")
 
     ctx = module.preprocess(cleaned_text, req_dict)
     system_prompt = module.build_system(req_dict, ctx)
@@ -188,6 +195,20 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
 
     client = get_client()
 
+    def enforce_structure(text: str) -> str:
+        sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇÝM ALANI", "TEK SORU"]
+        upper = (text or "").upper()
+        missing = [s for s in sections if s not in upper]
+        if not missing:
+            return text
+
+        return (
+            "GÖZLEM:\n" + (text or "")[:200] + "\n\n"
+            "KIRILMA NOKTASI:\nBurada görünmeyen bir seçim var.\n\n"
+            "SEÇÝM ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
+            "TEK SORU:\nGerçekten neyi seçiyorsun?"
+        )
+
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,
@@ -197,8 +218,9 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
         )
         reply = (completion.choices[0].message.content or "").strip()
         reply = enforce_structure(reply)
+
     except Exception as e:
-        print("ðŸ”¥ SANRI LLM ERROR ðŸ”¥")
+        print("?? SANRI LLM ERROR ??")
         print(repr(e))
         print(traceback.format_exc())
         print("PROMPT_VERSION:", SANRI_PROMPT_VERSION)
@@ -206,7 +228,7 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
         raise HTTPException(status_code=500, detail="LLM_ERROR: " + str(e))
 
     if not reply:
-        reply = "BuradayÄ±m."
+        reply = "Buradayým."
 
     out = module.postprocess(reply, req_dict, ctx) or {}
     answer = (out.get("answer") or reply).strip()
@@ -220,7 +242,7 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
         session_id=session_id,
         prompt_version=SANRI_PROMPT_VERSION,
         module=str(out.get("module") or domain),
-        title=str(out.get("title") or "SanrÄ±"),
+        title=str(out.get("title") or "Sanrý"),
         sections=list(out.get("sections") or []),
         tags=list(out.get("tags") or []),
     )
