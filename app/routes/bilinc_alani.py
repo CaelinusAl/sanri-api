@@ -1,4 +1,4 @@
-# app/routes/bilinc_alani.py
+﻿# app/routes/bilinc_alani.py
 import os
 import re
 import time
@@ -19,31 +19,26 @@ MODEL_NAME = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 TEMPERATURE = float(os.getenv("SANRI_TEMPERATURE", "0.55"))
 MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "1200"))
 
-# session memory
-MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10")) # user+assistant turns
-MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200")) # seconds
+MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10"))
+MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200"))
 
 MEM: Dict[str, Deque[Tuple[str, str]]] = defaultdict(lambda: deque(maxlen=MEM_TURNS * 2))
 LAST_SEEN: Dict[str, float] = {}
 
-# legacy allow frontend tag: [SANRI_MODE=mirror]
 MODE_TAG_RE = re.compile(r"^\s*\[SANRI[\s]?MODE\s*=\s*([a-zA-Z0-9-]+)\s*\]\s*", re.IGNORECASE)
 ALLOWED_GATE_MODES = {"mirror", "dream", "divine", "shadow", "light"}
 
 
 class AskRequest(BaseModel):
-    # user input
     message: Optional[str] = None
     question: Optional[str] = None
     session_id: Optional[str] = "default"
 
-    # NEW:
-    domain: Optional[str] = "auto" # awakened_cities | ritual_space | library | ...
-    gate_mode: Optional[str] = "mirror" # mirror | dream | divine | shadow | light
-    persona: Optional[str] = "user" # user | test | cocuk
-    plate: Optional[str] = None # awakened_cities quick hint
+    domain: Optional[str] = "auto"
+    gate_mode: Optional[str] = "mirror"
+    persona: Optional[str] = "user"
+    plate: Optional[str] = None
 
-    # BACKWARD COMPAT (old clients):
     mode: Optional[str] = Field(default=None)
 
     def text(self) -> str:
@@ -51,12 +46,10 @@ class AskRequest(BaseModel):
 
 
 class AskResponse(BaseModel):
-    # backward compatibility
     response: str
     session_id: str
     prompt_version: str
 
-    # structured
     module: str = "mirror"
     title: str = "Sanrı"
     answer: str = ""
@@ -81,15 +74,11 @@ def gc_sessions() -> None:
         MEM.pop(sid, None)
 
 
-def touch(sid: str) -> None:
-    LAST_SEEN[sid] = time.time()
-
-
 def remember(sid: str, role: str, content: str) -> None:
     if not content:
         return
     MEM[sid].append((role, content))
-    touch(sid)
+    LAST_SEEN[sid] = time.time()
 
 
 def history_messages(sid: str) -> List[dict]:
@@ -101,7 +90,6 @@ def history_messages(sid: str) -> List[dict]:
 
 
 def extract_mode_and_clean(text: str) -> Tuple[str, str]:
-    """Legacy tag: [SANRI_MODE=...]"""
     m = MODE_TAG_RE.match(text or "")
     if not m:
         return ("mirror", (text or "").strip())
@@ -117,7 +105,6 @@ def extract_mode_and_clean(text: str) -> Tuple[str, str]:
 def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
     cleaned_text = (raw_text or "").strip()
 
-    # legacy tag in text
     tag_mode, cleaned_text = extract_mode_and_clean(cleaned_text)
 
     domain = (req.domain or "auto").strip() or "auto"
@@ -125,7 +112,6 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
     persona = (req.persona or "user").strip() or "user"
     plate = (req.plate or "").strip()
 
-    # backward compat: req.mode
     if req.mode:
         m = str(req.mode).strip().lower()
         if m in ALLOWED_GATE_MODES:
@@ -149,15 +135,17 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
 
 
 def enforce_structure(text: str) -> str:
-    """SANRI response minimum structure guard."""
-    sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇİM ALANI", "TEK SORU"]
-    missing = [s for s in sections if s not in (text or "").upper()]
-    if not missing:
-        return text or ""
+    t = (text or "").strip()
+    if not t:
+        return "GÖZLEM:\n...\n\nKIRILMA NOKTASI:\n...\n\nSEÇİM ALANI:\n...\n\nTEK SORU:\nGerçekten neyi seçiyorsun?"
 
-    base = (text or "").strip()
+    sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇİM ALANI", "TEK SORU"]
+    upper = t.upper()
+    if all(s in upper for s in sections):
+        return t
+
     return (
-        "GÖZLEM:\n" + base[:200] + "\n\n"
+        "GÖZLEM:\n" + t[:240] + "\n\n"
         "KIRILMA NOKTASI:\nBurada görünmeyen bir seçim var.\n\n"
         "SEÇİM ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
         "TEK SORU:\nGerçekten neyi seçiyorsun?"
@@ -198,21 +186,17 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     messages.extend(history_messages(session_id))
     messages.append({"role": "user", "content": user_payload})
 
-        client = get_client()
+    client = get_client()
 
     try:
-        
-
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
             temperature=TEMPERATURE,
             max_tokens=MAX_TOKENS,
         )
-
         reply = (completion.choices[0].message.content or "").strip()
         reply = enforce_structure(reply)
-
     except Exception as e:
         print("🔥 SANRI LLM ERROR 🔥")
         print(repr(e))
