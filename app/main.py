@@ -80,7 +80,7 @@ if not origin_regex:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins, # ✅ dinamik liste
-    allow_origin_regex=origin_regex, # ✅ vercel preview dahil
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
