@@ -5,14 +5,13 @@ import time
 import traceback
 from collections import defaultdict, deque
 from typing import Optional, Deque, Dict, List, Tuple, Any
-from app.modules.registry import REGISTRY
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 from openai import OpenAI
 
 from app.prompts.system_base import SANRI_PROMPT_VERSION
-
+from app.modules.registry import REGISTRY
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
@@ -21,10 +20,9 @@ TEMPERATURE = float(os.getenv("SANRI_TEMPERATURE", "0.55"))
 MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "1200"))
 
 # session memory
-MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10"))  # user+assistant turns
-MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200"))    # seconds (2 hours)
+MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10")) # user+assistant turns
+MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200")) # seconds
 
-# session_id -> deque of (role, content)
 MEM: Dict[str, Deque[Tuple[str, str]]] = defaultdict(lambda: deque(maxlen=MEM_TURNS * 2))
 LAST_SEEN: Dict[str, float] = {}
 
@@ -39,20 +37,13 @@ class AskRequest(BaseModel):
     question: Optional[str] = None
     session_id: Optional[str] = "default"
 
-    # ✅ NEW: gerçek modül seçimi
-    domain: Optional[str] = "auto"           # awakened_cities | ritual_space | library | ...
-    gate_mode: Optional[str] = "mirror"      # mirror | dream | divine | shadow | light
+    # NEW:
+    domain: Optional[str] = "auto" # awakened_cities | ritual_space | library | ...
+    gate_mode: Optional[str] = "mirror" # mirror | dream | divine | shadow | light
+    persona: Optional[str] = "user" # user | test | cocuk
+    plate: Optional[str] = None # awakened_cities quick hint
 
-    # ✅ NEW: system persona (eski req.mode gibi)
-    persona: Optional[str] = "user"          # user | test | cocuk
-
-    # ✅ OPTIONAL: awakened_cities için hızlı sinyal
-    plate: Optional[str] = None              # "34" gibi
-
-    # ⚠️ BACKWARD COMPAT:
-    # Eski client'lar "mode" alanını yolluyor olabilir.
-    # - Eğer "mirror/dream/..." yolluyorsa gate_mode gibi alınır
-    # - Eğer "user/test/cocuk" yolluyorsa persona gibi alınır
+    # BACKWARD COMPAT (old clients):
     mode: Optional[str] = Field(default=None)
 
     def text(self) -> str:
@@ -65,7 +56,7 @@ class AskResponse(BaseModel):
     session_id: str
     prompt_version: str
 
-    # ✅ NEW structured output
+    # structured
     module: str = "mirror"
     title: str = "Sanrı"
     answer: str = ""
@@ -110,10 +101,7 @@ def history_messages(sid: str) -> List[dict]:
 
 
 def extract_mode_and_clean(text: str) -> Tuple[str, str]:
-    """
-    Legacy: Reads optional [SANRI_MODE=...] tag.
-    Returns (sanri_mode, cleaned_text).
-    """
+    """Legacy tag: [SANRI_MODE=...]"""
     m = MODE_TAG_RE.match(text or "")
     if not m:
         return ("mirror", (text or "").strip())
@@ -127,17 +115,11 @@ def extract_mode_and_clean(text: str) -> Tuple[str, str]:
 
 
 def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
-    """
-    Normalize inputs across new + old clients.
-    Returns (req_dict, cleaned_text)
-    """
     cleaned_text = (raw_text or "").strip()
 
     # legacy tag in text
-    tag_mode, cleaned_text2 = extract_mode_and_clean(cleaned_text)
-    cleaned_text = cleaned_text2
+    tag_mode, cleaned_text = extract_mode_and_clean(cleaned_text)
 
-    # start with request fields
     domain = (req.domain or "auto").strip() or "auto"
     gate_mode = (req.gate_mode or "mirror").strip().lower() or "mirror"
     persona = (req.persona or "user").strip() or "user"
@@ -149,10 +131,8 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
         if m in ALLOWED_GATE_MODES:
             gate_mode = m
         else:
-            persona = str(req.mode).strip()  # user/test/cocuk vb.
+            persona = str(req.mode).strip()
 
-    # if gate_mode not explicitly set but tag exists, use tag
-    # (only if gate_mode is default mirror)
     if gate_mode == "mirror" and tag_mode and tag_mode != "mirror":
         gate_mode = tag_mode
 
@@ -166,6 +146,22 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str]:
         "plate": plate,
     }
     return req_dict, cleaned_text
+
+
+def enforce_structure(text: str) -> str:
+    """SANRI response minimum structure guard."""
+    sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇİM ALANI", "TEK SORU"]
+    missing = [s for s in sections if s not in (text or "").upper()]
+    if not missing:
+        return text or ""
+
+    base = (text or "").strip()
+    return (
+        "GÖZLEM:\n" + base[:200] + "\n\n"
+        "KIRILMA NOKTASI:\nBurada görünmeyen bir seçim var.\n\n"
+        "SEÇİM ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
+        "TEK SORU:\nGerçekten neyi seçiyorsun?"
+    )
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -187,26 +183,24 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
             tags=[],
         )
 
-    # ✅ Normalize all inputs
     req_dict, cleaned_text = normalize_req(req, raw_text)
 
-    # ✅ Choose module by domain
     domain = req_dict["domain"]
     module = REGISTRY.get(domain) or REGISTRY.get("auto")
     if module is None:
         raise HTTPException(status_code=500, detail="Module registry misconfigured (auto missing)")
 
-    # ✅ Module preprocess → system/user prompts
     ctx = module.preprocess(cleaned_text, req_dict)
     system_prompt = module.build_system(req_dict, ctx)
     user_payload = module.build_user(req_dict, ctx)
 
-    # ✅ Build messages with memory
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history_messages(session_id))
     messages.append({"role": "user", "content": user_payload})
 
     try:
+        client = get_client()
+
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
@@ -215,20 +209,6 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
         )
 
         reply = (completion.choices[0].message.content or "").strip()
-
-        def enforce_structure(text: str) -> str:
-            sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇİM ALANI", "TEK SORU"]
-            missing = [s for s in sections if s not in (text or "").upper()]
-            if not missing:
-                return text
-
-            return (
-                "GÖZLEM:\n" + (text or "")[:200] + "\n\n"
-                "KIRILMA NOKTASI:\nBurada görünmeyen bir seçim var.\n\n"
-                "SEÇİM ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
-                "TEK SORU:\nGerçekten neyi seçiyorsun?"
-            )
-
         reply = enforce_structure(reply)
 
     except Exception as e:
@@ -242,16 +222,14 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     if not reply:
         reply = "Buradayım."
 
-    # ✅ Postprocess per module (structured response)
     out = module.postprocess(reply, req_dict, ctx) or {}
     answer = (out.get("answer") or reply).strip()
 
-    # ✅ Save memory AFTER success
     remember(session_id, "user", user_payload)
     remember(session_id, "assistant", reply)
 
     return AskResponse(
-        response=answer, # backward compatibility
+        response=answer,
         answer=answer,
         session_id=session_id,
         prompt_version=SANRI_PROMPT_VERSION,
