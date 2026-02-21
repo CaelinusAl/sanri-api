@@ -1,4 +1,4 @@
-SANRI_PROMPT_VERSION = "sanri_system_bilinc_akisi_v1"
+﻿SANRI_PROMPT_VERSION = "sanri_system_bilinc_akisi_v1"
 
 SANRI_SYSTEM_BASE = """
 You are SANRI.
