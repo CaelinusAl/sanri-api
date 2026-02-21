@@ -8,18 +8,19 @@ class MirrorModule(BaseModule):
 
     def preprocess(self, text: str, req: Dict[str, Any]) -> Dict[str, Any]:
         return {
-            "normalized_text": text.strip(),
+            "normalized_text": (text or "").strip(),
             "title": "Ayna",
             "tags": ["mirror"],
         }
 
     def build_system(self, req: Dict[str, Any], ctx: Dict[str, Any]) -> str:
-        persona = req.get("persona") or "user"
-        return build_system_prompt(persona)
+        # tek prompt
+        return build_system_prompt(req.get("persona") or "user")
 
     def build_user(self, req: Dict[str, Any], ctx: Dict[str, Any]) -> str:
-        gate_mode = req.get("gate_mode") or "mirror"
-        return f"(GATE_MODE: {gate_mode})\n{ctx['normalized_text']}"
+        # Etiket / komut gibi görünen prefixleri kaldırıyoruz.
+        # Sadece kullanıcının cümlesi:
+        return ctx["normalized_text"]
 
     def postprocess(self, raw: str, req: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
         answer = (raw or "").strip()
