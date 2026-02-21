@@ -196,14 +196,14 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     client = get_client()
 
     try:
-
-    print("SANRI_TEMP =", TEMPERATURE)
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
             temperature=TEMPERATURE,
             max_tokens=MAX_TOKENS,
         )
+
+        print("SANRI_TEMP =", TEMPERATURE)
         reply = (completion.choices[0].message.content or "").strip()
         
 
