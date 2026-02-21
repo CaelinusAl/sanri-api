@@ -218,7 +218,7 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
             max_tokens=MAX_TOKENS,
         )
         reply = (completion.choices[0].message.content or "").strip()
-        reply = enforce_structure(reply)
+        
 
     except Exception as e:
         print("🔥 SANRI LLM ERROR 🔥")
