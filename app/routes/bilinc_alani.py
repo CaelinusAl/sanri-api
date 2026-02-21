@@ -196,6 +196,8 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     client = get_client()
 
     try:
+
+    print("SANRI_TEMP =", TEMPERATURE)
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
@@ -206,6 +208,8 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
         
 
     except Exception as e:
+        
+
         print("🔥 SANRI LLM ERROR 🔥")
         print(repr(e))
         print(traceback.format_exc())
