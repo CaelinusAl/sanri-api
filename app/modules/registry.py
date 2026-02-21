@@ -3,6 +3,7 @@ from app.modules.awakened_cities import AwakenedCitiesModule
 
 REGISTRY = {
     "auto": MirrorModule(),
+    "mirror": MirrorModule(), 
     "consciousness_field": MirrorModule(),
     "frequency_field": MirrorModule(),
     "ritual_space": MirrorModule(),
