@@ -85,21 +85,6 @@ def extract_mode_and_clean(text: str) -> Tuple[str, str]:
     return (mode, cleaned)
 
 
-def enforce_structure(text: str) -> str:
-    """If model breaks format, enforce minimum structure."""
-    sections = ["GÖZLEM", "KIRILMA NOKTASI", "SEÇİM ALANI", "TEK SORU"]
-    upper = (text or "").upper()
-    missing = [s for s in sections if s not in upper]
-    if not missing:
-        return text or ""
-
-    return (
-        "GÖZLEM:\n" + (text or "")[:200] + "\n\n"
-        "KIRILMA NOKTASI:\nBurada görünmeyen bir seçim var.\n\n"
-        "SEÇİM ALANI:\nDevam etmek ya da yeniden kurmak.\n\n"
-        "TEK SORU:\nGerçekten neyi seçiyorsun?"
-    )
-
 
 # -------------------------
 # models
@@ -234,7 +219,7 @@ def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None)):
     out = module.postprocess(reply, req_dict, ctx) or {}
     answer = (out.get("answer") or reply).strip()
 
-    remember(session_id, "user", user_payload)
+    remember(session_id, "user", cleaned_text)  
     remember(session_id, "assistant", reply)
 
     return AskResponse(
