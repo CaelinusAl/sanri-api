@@ -1,3 +1,2 @@
-from sqlalchemy.orm import declarative_base
-
-Base = declarative_base()
+# app/models/base.py
+from app.db import Base

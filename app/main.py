@@ -12,9 +12,13 @@ from app.routes.auth import router as auth_router
 from app.routes.subscription import router as subscription_router
 from app.routes.awakenmis_sehirler import router as awakened_cities_router
 from app.routes.matrix_rol import router as matrix_rol_router
-
+from app.routes.events import router as events_router
+from app.routes.world_events_admin import router as world_events_admin_router
+from app.routes.world_events_public import router as world_events_public_router
+from app.routes.sanri_voice import router as sanri_voice_router
 from app.db import engine
 from app.models.base import Base
+
 
 
 def _split_origins(v: str) -> list[str]:
@@ -44,9 +48,8 @@ def health():
 
 @app.on_event("startup")
 def _startup():
+    import app.models  # tek satır yeter
     Base.metadata.create_all(bind=engine)
-
-
 # --------------------
 # CORS (FXED)
 # --------------------
@@ -95,5 +98,8 @@ app.include_router(subscription_router)
 app.include_router(admin_router)
 app.include_router(awakened_cities_router)
 app.include_router(matrix_rol_router)
-
+app.include_router(events_router)
+app.include_router(world_events_admin_router)
+app.include_router(world_events_public_router)
+app.include_router(sanri_voice_router)
 

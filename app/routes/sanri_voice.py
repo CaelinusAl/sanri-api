@@ -1,25 +1,52 @@
-﻿from fastapi import APIRouter, Body, HTTPException
-from fastapi.responses import Response
-from app.openai_client import get_client
+﻿import os
+import tempfile
+from fastapi import APIRouter, UploadFile, File
+from openai import OpenAI
 
-router = APIRouter(prefix="/sanri_voice", tags=["sanri_voice"])
+router = APIRouter(prefix="/api/voice", tags=["voice"])
 
-def synth(text: str, voice: str = "alloy") -> bytes:
+def get_client() -> OpenAI:
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing")
+    return OpenAI(api_key=api_key)
+
+@router.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    return {"text": "dummy"}
+    """
+    Multipart form-data:
+      - file: audio/m4a (or wav)
+      - lang: tr|en (optional)
+    """
     client = get_client()
-    audio = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice=voice,
-        input=text
-    )
-    return audio.read()
 
-@router.post("/speak")
-def sanri_speak(payload: dict = Body(...)):
-    text = payload.get("text")
-    voice = payload.get("voice", "alloy")
+    suffix = ".m4a"
+    if file.filename and "." in file.filename:
+        suffix = "." + file.filename.split(".")[-1].lower()
 
-    if not text:
-        raise HTTPException(status_code=400, detail="text is required")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp_path = tmp.name
+        content = await file.read()
+        tmp.write(content)
 
-    audio_bytes = synth(text, voice)
-    return Response(content=audio_bytes, media_type="audio/mpeg")
+    try:
+        with open(tmp_path, "rb") as f:
+            # Whisper: transcription
+            result = client.audio.transcriptions.create(
+                model=os.getenv("OPENAI_WHISPER_MODEL", "gpt-4o-mini-transcribe"),
+                file=f,
+                language=lang if lang in ("tr", "en") else None,
+            )
+
+        text = (getattr(result, "text", None) or "").strip()
+        return {"text": text}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TRANSCRIBE_ERROR: {e}")
+
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass

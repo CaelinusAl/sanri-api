@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
+print("JWT_SECRET =>", os.getenv("JWT_SECRET"))
 
 load_dotenv()
 

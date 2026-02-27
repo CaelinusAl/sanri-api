@@ -1,117 +1,140 @@
 # app/routes/admin.py
-from __future__ import annotations
-
-from fastapi import APIRouter, HTTPException, Query
 import os
-import psycopg2
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import func, desc
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_KEY = (os.getenv("ADMIN_KEY") or "").strip()
+from app.db import get_db
+from app.models.event import Event
+from app.models.memory import Memory
 
+router = APIRouter(prefix="/admin", tags=["admin"])
 
-def _conn():
-    if not DATABASE_URL:
-        raise HTTPException(status_code=500, detail="DATABASE_URL missing in service env")
-    return psycopg2.connect(DATABASE_URL, connect_timeout=8)
+ADMIN_TOKEN = (os.getenv("SANRI_ADMIN_TOKEN") or "").strip()
 
+def require_admin(x_admin_token: Optional[str]):
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=500, detail="SANRI_ADMIN_TOKEN missing")
+    if not x_admin_token or x_admin_token.strip() != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Admin only")
 
-def _require_admin(key: str | None):
-    if not ADMIN_KEY:
-        raise HTTPException(status_code=500, detail="ADMIN_KEY missing in service env")
-    if not key:
-        raise HTTPException(status_code=401, detail="Missing key")
-    if key != ADMIN_KEY:
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-
-@router.get("/stats")
-def admin_stats(key: str = Query(default=None, description="Admin key")):
-    _require_admin(key)
-
-    try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM users;")
-                total = int(cur.fetchone()[0] or 0)
-
-                # Today users
-                today = 0
-                try:
-                    cur.execute("SELECT COUNT(*) FROM users WHERE created_at::date = CURRENT_DATE;")
-                    today = int(cur.fetchone()[0] or 0)
-                except Exception:
-                    today = 0
-
-                # Premium users
-                premium = 0
-                try:
-                    cur.execute("SELECT COUNT(*) FROM users WHERE is_premium = true;")
-                    premium = int(cur.fetchone()[0] or 0)
-                except Exception:
-                    premium = 0
-
-        return {"total_users": total, "today_users": today, "premium_users": premium}
-
-    except psycopg2.Error as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"admin_stats db error: {getattr(e, 'pgcode', '')} {str(e)}",
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"admin_stats failed: {type(e).__name__}: {str(e)}")
-
-
-@router.get("/users")
-def admin_users(
-    key: str = Query(default=None, description="Admin key"),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+@router.get("/overview")
+def overview(
+    db: Session = Depends(get_db),
+    x_admin_token: Optional[str] = Header(default=None),
 ):
-    _require_admin(key)
+    require_admin(x_admin_token)
 
-    try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        id,
-                        email,
-                        created_at,
-                        COALESCE(is_premium, false) as is_premium,
-                        COALESCE(plan, 'free') as plan,
-                        last_login_at,
-                        last_seen_at
-                    FROM users
-                    ORDER BY created_at DESC NULLS LAST, id DESC
-                    LIMIT %s OFFSET %s;
-                    """,
-                    (limit, offset),
-                )
-                rows = cur.fetchall()
+    now = datetime.now(timezone.utc)
+    since_24h = now - timedelta(hours=24)
+    since_7d = now - timedelta(days=7)
 
-        users = []
-        for r in rows:
-            users.append(
-                {
-                    "id": r[0],
-                    "email": r[1],
-                    "created_at": r[2].isoformat() if r[2] else None,
-                    "is_premium": bool(r[3]),
-                    "plan": r[4],
-                    "last_login_at": r[5].isoformat() if r[5] else None,
-                    "last_seen_at": r[6].isoformat() if r[6] else None,
-                }
-            )
+    total_events = db.query(func.count(Event.id)).scalar() or 0
+    events_24h = db.query(func.count(Event.id)).filter(Event.created_at >= since_24h).scalar() or 0
+    events_7d = db.query(func.count(Event.id)).filter(Event.created_at >= since_7d).scalar() or 0
 
-        return {"users": users, "count": len(users), "limit": limit, "offset": offset}
+    top_domains = (
+        db.query(Event.domain, func.count(Event.id).label("c"))
+        .filter(Event.created_at >= since_7d)
+        .group_by(Event.domain)
+        .order_by(desc(func.count(Event.id)))
+        .limit(10)
+        .all()
+    )
 
-    except psycopg2.Error as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"admin_users db error: {getattr(e, 'pgcode', '')} {str(e)}",
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"admin_users failed: {type(e).__name__}: {str(e)}")
+    last_events = (
+        db.query(Event)
+        .order_by(desc(Event.created_at))
+        .limit(20)
+        .all()
+    )
+
+    return {
+        "now": now.isoformat(),
+        "total_events": int(total_events),
+        "events_24h": int(events_24h),
+        "events_7d": int(events_7d),
+        "top_domains": [{"domain": (d or "unknown"), "count": int(c)} for d, c in top_domains],
+        "last_events": [
+            {
+                "id": e.id,
+                "user_id": e.user_id,
+                "action": e.action,
+                "domain": e.domain,
+                "meta": e.meta,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in last_events
+        ],
+    }
+
+@router.get("/events")
+def list_events(
+    limit: int = 50,
+    offset: int = 0,
+    domain: Optional[str] = None,
+    action: Optional[str] = None,
+    db: Session = Depends(get_db),
+    x_admin_token: Optional[str] = Header(default=None),
+):
+    require_admin(x_admin_token)
+
+    q = db.query(Event)
+    if domain:
+        q = q.filter(Event.domain == domain)
+    if action:
+        q = q.filter(Event.action == action)
+
+    rows = q.order_by(desc(Event.created_at)).offset(offset).limit(min(limit, 200)).all()
+
+    return {
+        "items": [
+            {
+                "id": e.id,
+                "user_id": e.user_id,
+                "action": e.action,
+                "domain": e.domain,
+                "meta": e.meta,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in rows
+        ],
+        "limit": limit,
+        "offset": offset,
+    }
+
+@router.get("/memories")
+def list_memories(
+    limit: int = 50,
+    offset: int = 0,
+    mem_type: Optional[str] = None,
+    db: Session = Depends(get_db),
+    x_admin_token: Optional[str] = Header(default=None),
+):
+    require_admin(x_admin_token)
+
+    q = db.query(Memory)
+    if mem_type:
+        q = q.filter(Memory.type == mem_type)
+
+    rows = q.order_by(desc(Memory.created_at)).offset(offset).limit(min(limit, 200)).all()
+
+    return {
+        "items": [
+            {
+                "id": m.id,
+                "user_id": m.user_id,
+                "type": m.type,
+                "context": m.context,
+                "input_text": m.input_text,
+                "output_text": m.output_text,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in rows
+        ],
+        "limit": limit,
+        "offset": offset,
+    }
