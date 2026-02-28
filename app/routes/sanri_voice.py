@@ -1,6 +1,6 @@
 ﻿import os
 import tempfile
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from openai import OpenAI
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
@@ -12,13 +12,8 @@ def get_client() -> OpenAI:
     return OpenAI(api_key=api_key)
 
 @router.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
-    return {"text": "dummy"}
-    """
-    Multipart form-data:
-      - file: audio/m4a (or wav)
-      - lang: tr|en (optional)
-    """
+async def transcribe(file: UploadFile = File(...), lang: str | None = None):
+    # file: audio/m4a veya wav
     client = get_client()
 
     suffix = ".m4a"
@@ -32,19 +27,15 @@ async def transcribe(file: UploadFile = File(...)):
 
     try:
         with open(tmp_path, "rb") as f:
-            # Whisper: transcription
             result = client.audio.transcriptions.create(
                 model=os.getenv("OPENAI_WHISPER_MODEL", "gpt-4o-mini-transcribe"),
                 file=f,
                 language=lang if lang in ("tr", "en") else None,
             )
-
         text = (getattr(result, "text", None) or "").strip()
         return {"text": text}
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TRANSCRIBE_ERROR: {e}")
-
     finally:
         try:
             os.remove(tmp_path)
