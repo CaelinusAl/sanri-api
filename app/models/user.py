@@ -15,9 +15,8 @@ class User(Base):
     name = Column(String, nullable=True)
     birth_date = Column(String, nullable=True) # "21.0.2026" gibi
 
-    role = Column(String, default="free")  
-    # free | premium | elite
 
+    role = Column(String, default="free")
 
     # premium
     is_premium = Column(Boolean, default=False)

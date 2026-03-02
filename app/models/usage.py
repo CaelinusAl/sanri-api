@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Date, UniqueConstraint
 from app.db import Base
 
 class Usage(Base):
-    _tablename_ = "usage"
+    __tablename__ = "usage"
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -17,6 +17,6 @@ class Usage(Base):
     # counters
     total = Column(Integer, default=0, nullable=False)
 
-    _table_args_ = (
+    __table_args__ = (
         UniqueConstraint("external_id", "day", name="uq_usage_external_day"),
     )
