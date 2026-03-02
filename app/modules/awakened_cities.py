@@ -230,7 +230,7 @@ class AwakenedCitiesModule(BaseModule):
         if lang not in ("tr", "en"):
             lang = "tr"
 
-        core_path = _here("..", "prompts", "sanri_core.txt")
+        core_path = _here("..", "prompts", "awakened_81_kapi_tr.txt")
         core = _read_text(core_path).strip()
 
         gate = ctx.get("gate") or {}

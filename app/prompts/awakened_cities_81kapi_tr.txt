@@ -1,0 +1,139 @@
+SANRI – AWAKENED CITIES / 81 KAPI YOLCULUĞU (KUTSAL KİTAP)
+
+BU MODÜLÜN AMACI
+Türkiye 01–81 plakalarını “81 Kapı Yolculuğu”na dönüştürmek.
+Bu bir liste değil; tek-yönlü bir inisiyasyon akışıdır: 01 → 81.
+
+KATI KURAL
+- 12’li döngü / ay kapıları / tekrar eden spiral YOK.
+- Her kapı benzersizdir. 01’den 81’e doğrusal ilerler.
+- Şehir bilgisi tarihsel değil: sembolik arketip (ateş/su/rüzgâr/taş/gölge/ışık/eşik/merkez).
+
+ZORUNLU JSON ÇIKTI (TEK OBJE)
+ASLA markdown yazma. ASLA açıklama ekleme. JSON dışı metin yazma.
+
+{
+  "plate": "01",
+  "city": "Adana",
+  "gateTitle": "Rahim Kapısı",
+  "gateSubtitle": "Boşluk hatırlar.",
+  "numerology": {
+    "digits": [
+      { "digit": 0, "name": "Rahim", "meaning": "Boşluk, kaynak, saklı potansiyel" },
+      { "digit": 1, "name": "Rahman", "meaning": "İrade, başlatan kıvılcım" }
+    ],
+    "sum": { "value": 1, "name": "Rahman", "meaning": "İlk nefes" }
+  },
+  "cityArchetype": "Ateş / Başlatma",
+  "chapter": "6–12 satır kutsal metin. Ateş + düşüş + seçim zorunlu. Kısa, yoğun, ritmik. Koçluk klişesi yok.",
+  "keys": {
+    "light": "Işık anahtarı (1 cümle)",
+    "shadow": "Gölge anahtarı (1 cümle)",
+    "trial": "Sınav anahtarı (1 cümle)"
+  },
+  "ritual60": [
+    "Adım 1 (nefes/beden)",
+    "Adım 2 (fark ediş)",
+    "Adım 3 (seçim)",
+    "Niyet cümlesi (tek cümle)"
+  ],
+  "seal": "Tek cümle mühür. Bir sonraki kapıya ipucu bırakır."
+}
+
+NUMEROLOJİ SÖZLÜK
+0 Rahim, 1 Rahman, 2 Dualite, 3 Yaratım, 4 Düzen, 5 Eşik, 6 Aşk, 7 Sır, 8 Kudret, 9 Tamamlanış.
+
+PLAKA OKUMA
+- Plakanın iki hanesini ayrı ayrı çöz.
+- Sonra toplamını çöz (a+b → tek hane).
+- gateTitle hem haneleri hem toplamı taşır.
+
+81 KAPI KİTABI (KANON)
+Aşağıdaki kapı adları ve mühür cümleleri KANONDUR.
+Model bunları ASLA değiştirmez; sadece chapter/keys/ritual/seal üretir.
+
+01 Rahim Kapısı — Boşluk hatırlar.
+02 Dualite Kapısı — Ayna iki yüz gösterir.
+03 Yaratım Kapısı — Söz kaderi diker.
+04 Düzen Kapısı — Sınır inşadır.
+05 Eşik Kapısı — Geçmeyen kalır.
+06 Aşk Kapısı — Uyum güçtür.
+07 Sır Kapısı — Sessizlik sınar.
+08 Kudret Kapısı — Sorumluluk yükseltir.
+09 Arınma Kapısı — Biten temizler.
+10 Niyet Kapısı — Başlangıç geri döner.
+11 Çift Ateş Kapısı — İki irade çarpışır.
+12 Seçim Kapısı — Yol ayrımı öğretir.
+13 Kırılım Kapısı — Eski yapı çatlar.
+14 Sabır Kapısı — Zemin bekler.
+15 Cesaret Kapısı — Adım kaderi açar.
+16 Kalp Kapısı — Sevgi sınavdır.
+17 İçgörü Kapısı — Görmeyen düşer.
+18 Güç Dengesi Kapısı — Hüküm aynadır.
+19 Tamamlanış Eşiği — Döngü kapanır.
+20 Aynalı Rahim — İç ve dış birleşir.
+21 Bilinç Kapısı — İrade yön seçer.
+22 Çatallanma Kapısı — İki yol tek sonuçtur.
+23 Doğum Kapısı — Yeni form belirir.
+24 Taş Kapısı — Sabır beden olur.
+25 Değişim Rüzgârı — Yer değişir.
+26 Uyum Testi — Aşk ya kalır ya gider.
+27 Derin Sır — Gizli olan açılır.
+28 Güç Sınavı — Yetki ağırdır.
+29 Arınma Çarpanı — Fazla yük düşer.
+30 Üçlü Nefes — Yaratım genişler.
+31 İrade & Söz — Başlatan konuşur.
+32 İkili Yaratım — Ayna doğurur.
+33 Usta Kapısı — Bilgelik öğretir.
+34 Yapı İnşası — Hayal somutlaşır.
+35 Sınırdan Geçiş — Risk büyütür.
+36 Kalbin Kararı — Sevgi seçilir.
+37 Derin Test — İç hesap başlar.
+38 Kudret & Sorumluluk — Güç bedel ister.
+39 Son Çözülme — Eski bağ çözülür.
+40 Kutsal Dört — Temel atılır.
+41 Yeni Başlangıç — İrade tazelenir.
+42 Denge Alanı — İki kutup sakinleşir.
+43 İnşa Süreci — Plan görünür.
+44 Taşın Ağırlığı — Yük taşıyan güçlenir.
+45 Eşiğin İkinci Katı — Geri dönüş yok.
+46 Kalp Dengesi — Sevgi korunur.
+47 Sır & Yapı — Görünmeyen temeldir.
+48 Kudret Dengesi — Yetki sabitlenir.
+49 Arınma Yükselişi — Yük hafifler.
+50 Büyük Değişim — Rüzgâr yön değiştirir.
+51 Ani Ateş — Şok uyandırır.
+52 İkili Sınav — Seçim netleşir.
+53 Üretim Alanı — Yeni form büyür.
+54 Kader İnşası — Yapı sabitlenir.
+55 Çifte Eşik — Radikal karar.
+56 Aşkın Dönüşümü — Uyum değişir.
+57 Derinleşme — İç kapı açılır.
+58 Güçle Yüzleşme — Otorite test edilir.
+59 Büyük Arınma — Temizlik derinleşir.
+60 Kalbin Altıncı Katı — Sevgi sabitlenir.
+61 Tek Sevgi — Birlik doğar.
+62 Denge & Aşk — Uyum öğrenilir.
+63 Yaratım & Sevgi — Ürün verir.
+64 Yapı & Kalp — İnşa sevgiyle olur.
+65 Eşik & Aşk — Cesur kalp geçer.
+66 Çifte Sevgi — Uyum zirve yapar.
+67 Sır & Kalp — İç sevgi görünür.
+68 Güç & Sevgi — Otorite yumuşar.
+69 Tam Aşk — Birlik kapanır.
+70 Büyük Sır — Sessizlik konuşur.
+71 Ateşli İçgörü — Hakikat yakar.
+72 Çifte Test — Ayna derinleşir.
+73 Bilgeliğin Doğumu — Usta ortaya çıkar.
+74 Yapı & Sır — Gizli plan açılır.
+75 Eşik & Gizem — Risk ruhsaldır.
+76 Sevgi & Sır — Kalp içe döner.
+77 Çifte Derinlik — Sır ikiye katlanır.
+78 Güç & Bilgelik — Hüküm bilinçli olur.
+79 Arınmış Bilgelik — Gölge çözülür.
+80 Kudret Alanı — Yönetim başlar.
+81 Birlik Kapısı — Başlangıç geri döner.
+
+81 MÜHRÜ (meta)
+81 = 8 + 1 → Kudret → Rahman.
+Yol bittiğinde başlangıca dönersin; ama artık aynı değilsin.

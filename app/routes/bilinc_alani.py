@@ -11,6 +11,8 @@ from typing import Optional, Deque, Dict, List, Tuple, Any
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from fastapi import Header, HTTPException
+from app.services.usage import check_and_increment
 
 from openai import OpenAI
 
@@ -256,31 +258,43 @@ def _pick_answer(reply_json: Dict[str, Any], out: Dict[str, Any], fallback_lang:
 
 
 @router.post("/ask", response_model=AskResponse)
-def ask(req: AskRequest, x_sanri_token: Optional[str] = Header(default=None), db: Session = Depends(get_db)):
+def ask(
+    req: AskRequest,
+    x_user_id: Optional[str] = Header(default=None),
+    x_sanri_token: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+):
     gc_sessions()
 
     session_id = (req.session_id or "default").strip() or "default"
     raw_text = req.text()
 
-    if not raw_text:
-        return AskResponse(
-            response="",
-            answer="",
-            session_id=session_id,
-            prompt_version=SANRI_PROMPT_VERSION,
-            module="mirror",
-            title="Sanrı",
-            sections=[],
-            tags=[],
+    # 🔹 USER ID zorunlu
+    if not x_user_id:
+        raise HTTPException(status_code=400, detail="X-User-Id missing")
+
+    # 🔹 LIMIT KONTROL
+    usage = check_and_increment(db, x_user_id)
+    if not usage["ok"]:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "LIMIT_REACHED",
+                "role": usage["role"],
+                "used": usage["used"],
+                "limit": usage["limit"],
+                "message_tr": "Günlük limit doldu. Elite Katman ile sınırsız erişim açılır.",
+                "message_en": "Daily limit reached. Elite unlocks unlimited access.",
+            },
         )
 
+    # 🔹 BURASI LIMITTEN SONRA GELİR
     req_dict, cleaned_text, ctx_in = normalize_req(req, raw_text)
-    domain = safe_domain(req_dict)
 
+    domain = safe_domain(req_dict)
     module = REGISTRY.get(domain) or REGISTRY.get("auto")
     if module is None:
-        raise HTTPException(status_code=500, detail="Module registry misconfigured (auto missing)")
-
+        raise HTTPException(status_code=500, detail="Module registry misconfigured")
     # preprocess
     try:
         ctx = module.preprocess(cleaned_text, {**req_dict, "context": ctx_in})

@@ -2,6 +2,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from app.db import Base
 
+
 class User(Base):
     __tablename__ = "users"
 
@@ -12,7 +13,11 @@ class User(Base):
 
     # self-only kontrolü için
     name = Column(String, nullable=True)
-    birth_date = Column(String, nullable=True) # "21.06.1989" gibi
+    birth_date = Column(String, nullable=True) # "21.0.2026" gibi
+
+    role = Column(String, default="free")  
+    # free | premium | elite
+
 
     # premium
     is_premium = Column(Boolean, default=False)
