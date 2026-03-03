@@ -1,21 +1,22 @@
+# app/db.py
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from app.models.usage import Usage  # noqa
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 
+# Render'da DATABASE_URL boşsa bile app çökmesin:
+# (istersen burada Exception fırlatabilirsin; şimdilik dev mod için güvenli)
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is missing")
+    DATABASE_URL = "sqlite:///./dev.db"
 
-# Railway bazen postgres:// verir, SQLAlchemy postgresql+psycopg2 ister
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
-elif DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    future=True,
+)
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
