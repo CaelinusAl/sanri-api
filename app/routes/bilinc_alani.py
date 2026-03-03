@@ -251,12 +251,12 @@ def _pick_answer(reply_json: Dict[str, Any], out: Dict[str, Any], fallback_lang:
 
 
 @router.exception_handler(Exception)
-async def _all_errors_to_json(request: Request, exc: Exception):
-    # ✅ Her 500 artık JSON dönecek → mobile NON_JSON_RESPONSE biter
-    payload = {"code": "INTERNAL", "message": str(exc)}
-    if SANRI_DEBUG:
-        payload["trace"] = traceback.format_exc()
-    return JSONResponse(status_code=500, content={"detail": payload})
+async def global_exception_handler(request: Request, exc: Exception):
+    print("GLOBAL ERROR:", repr(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+    )
 
 
 @router.post("/ask", response_model=AskResponse)
