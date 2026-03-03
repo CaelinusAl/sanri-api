@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import httpx
-print("HTTPX_VERSION =", httpx._version_)
+print("HTTPX_VERSION =", httpx.__version__)
 
 import os
 from fastapi import FastAPI
