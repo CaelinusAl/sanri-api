@@ -8,8 +8,7 @@ import traceback
 from collections import defaultdict, deque
 from typing import Optional, Deque, Dict, List, Tuple, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -17,9 +16,14 @@ from openai import OpenAI
 
 from app.db import get_db
 from app.services.usage import check_and_increment
+
+# Module registry (projende neredeyse oradan import et)
 from app.modules.registry import REGISTRY  # type: ignore
+
+# Prompt version (projende neredeyse oradan import et)
 from app.prompts.system_base import SANRI_PROMPT_VERSION  # type: ignore
 
+# DB models (opsiyonel)
 try:
     from app.models.event import Event  # type: ignore
 except Exception:
@@ -33,15 +37,12 @@ except Exception:
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
-MODEL_NAME = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
+MODEL_NAME = (os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
 TEMPERATURE = float(os.getenv("SANRI_TEMPERATURE", "0.55"))
-MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "800"))
+MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "900"))
 
 MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10"))
 MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200"))
-
-# DEBUG: Render’da 500 sebebini JSON ile görmek için
-SANRI_DEBUG = (os.getenv("SANRI_DEBUG") or "0").strip() == "1"
 
 MEM: Dict[str, Deque[Tuple[str, str]]] = defaultdict(lambda: deque(maxlen=MEM_TURNS * 2))
 LAST_SEEN: Dict[str, float] = {}
@@ -52,9 +53,11 @@ ALLOWED_GATE_MODES = {"mirror", "dream", "divine", "shadow", "light"}
 
 def ensure_json_obj(text: str) -> Dict[str, Any]:
     raw = (text or "").strip()
+
     if raw.startswith("```"):
-        raw = raw.strip("`")
-        raw = raw.replace("json", "", 1).strip()
+        raw = raw.strip("`").strip()
+        if raw.lower().startswith("json"):
+            raw = raw[4:].strip()
 
     try:
         obj = json.loads(raw)
@@ -62,6 +65,7 @@ def ensure_json_obj(text: str) -> Dict[str, Any]:
             return obj
         return {"error": "invalid_json", "reason": "not_object", "raw": raw[:800]}
     except Exception:
+        # ilk { ... } bloğunu yakala
         try:
             start = raw.find("{")
             end = raw.rfind("}")
@@ -75,17 +79,17 @@ def ensure_json_obj(text: str) -> Dict[str, Any]:
 
 
 def get_client() -> OpenAI:
-    # ⚠️ EN KRİTİK FIX: timeout parametresi birçok OpenAI SDK sürümünde patlatır.
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
-        raise HTTPException(status_code=500, detail={"code": "NO_OPENAI_KEY", "message": "OPENAI_API_KEY missing"})
-    return OpenAI(api_key=api_key)
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing or empty")
+    # Render cold-start + OpenAI gecikmeleri için timeout
+    return OpenAI(api_key=api_key, timeout=60)
 
 
 def gc_sessions() -> None:
-    now = time.time()
     if MEM_TTL <= 0:
         return
+    now = time.time()
     dead = [sid for sid, ts in LAST_SEEN.items() if now - ts > MEM_TTL]
     for sid in dead:
         LAST_SEEN.pop(sid, None)
@@ -188,6 +192,7 @@ class AskRequest(BaseModel):
     context: Optional[dict] = None
     lang: Optional[str] = None
 
+    # eski client uyumluluğu
     mode: Optional[str] = Field(default=None)
 
     def text(self) -> str:
@@ -198,6 +203,7 @@ class AskResponse(BaseModel):
     response: str
     session_id: str
     prompt_version: str
+
     module: str = "mirror"
     title: str = "Sanrı"
     answer: str = ""
@@ -244,12 +250,12 @@ def _pick_answer(reply_json: Dict[str, Any], out: Dict[str, Any], fallback_lang:
         a = str(out.get("answer") or out.get("response") or "").strip()
         if a:
             return a
+
     a2 = str(reply_json.get("answer") or reply_json.get("response") or "").strip()
     if a2:
         return a2
+
     return "Buradayım." if fallback_lang == "tr" else "I'm here."
-
-
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -262,7 +268,7 @@ def ask(
     gc_sessions()
 
     if not x_user_id:
-        raise HTTPException(status_code=400, detail={"code": "X_USER_ID_MISSING", "message": "X-User-Id missing"})
+        raise HTTPException(status_code=400, detail="X-User-Id missing")
 
     session_id = (req.session_id or "default").strip() or "default"
     raw_text = req.text()
@@ -279,7 +285,7 @@ def ask(
             tags=[],
         )
 
-    # limit (DB yoksa düşme)
+    # LIMIT (tek kez)
     try:
         usage = check_and_increment(db, x_user_id)
     except Exception:
@@ -293,8 +299,8 @@ def ask(
                 "role": usage.get("role", "free"),
                 "used": usage.get("used", 0),
                 "limit": usage.get("limit", 47),
-                "message_tr": "Günlük limit doldu. Elite Katman ile sınırsız erişim açılır.",
-                "message_en": "Daily limit reached. Elite unlocks unlimited access.",
+                "message_tr": "Günlük limit doldu. VIP ile açılır.",
+                "message_en": "Daily limit reached. Unlock VIP.",
             },
         )
 
@@ -303,13 +309,15 @@ def ask(
     domain = safe_domain(req_dict)
     module = REGISTRY.get(domain) or REGISTRY.get("auto")
     if module is None:
-        raise HTTPException(status_code=500, detail={"code": "REGISTRY_MISSING", "message": "auto missing"})
+        raise HTTPException(status_code=500, detail="Module registry misconfigured (auto missing)")
 
+    # preprocess
     try:
         ctx = module.preprocess(cleaned_text, {**req_dict, "context": ctx_in})
     except TypeError:
         ctx = module.preprocess(cleaned_text, req_dict)
 
+    # prompts
     try:
         system_prompt = module.build_system(req_dict, ctx)
         user_payload = module.build_user(req_dict, ctx)
@@ -321,6 +329,7 @@ def ask(
     messages.extend(history_messages(session_id))
     messages.append({"role": "user", "content": user_payload})
 
+    # DB event log (opsiyonel)
     meta = safe_meta(req_dict, ctx_in)
     meta["session_id"] = session_id
     meta["token_present"] = bool(x_sanri_token)
@@ -328,16 +337,38 @@ def ask(
 
     client = get_client()
 
-    completion = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=messages,
-        temperature=TEMPERATURE,
-        max_tokens=MAX_TOKENS,
-    )
+    # LLM
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+        )
+        reply_text = (completion.choices[0].message.content or "").strip()
+        reply_json = ensure_json_obj(reply_text)
 
-    reply_text = (completion.choices[0].message.content or "").strip()
-    reply_json = ensure_json_obj(reply_text)
+    except Exception as e:
+        # JSON döndür (frontend NON_JSON görmesin)
+        print("SANRI LLM ERROR:", repr(e))
+        print(traceback.format_exc())
 
+        fallback = "Sanrı şu an uyanıyor. Tekrar dene." if (req_dict.get("lang") or "tr") != "en" else "Sanri is waking. Try again."
+        remember(session_id, "user", cleaned_text)
+        remember(session_id, "assistant", fallback)
+
+        return AskResponse(
+            response=fallback,
+            answer=fallback,
+            session_id=session_id,
+            prompt_version=SANRI_PROMPT_VERSION,
+            module="error",
+            title="Sanrı",
+            sections=[],
+            tags=["llm_error"],
+        )
+
+    # postprocess (try/except DIŞINDA)
     try:
         out = module.postprocess(reply_json, req_dict, ctx) or {}
     except TypeError:
@@ -346,6 +377,7 @@ def ask(
     lang = (req_dict.get("lang") or "tr").lower()
     if lang not in ("tr", "en"):
         lang = "tr"
+
     answer = _pick_answer(reply_json, out, lang)
 
     remember(session_id, "user", cleaned_text)
