@@ -5,6 +5,7 @@ load_dotenv()
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.routes.admin import router as admin_router
 from app.routes.bilinc_alani import router as bilinc_router
@@ -33,18 +34,15 @@ def _split_origins(v: str) -> list[str]:
     return out
 
 
-app = FastAPI(title="SANRI API")
-
+app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "SANR AP"}
-
+    return {"status": "ok", "service": "SANRI API"}
 
 @app.get("/health")
 def health():
-    return {"ok": True}
-
+    return {"status": "ok"}
 
 @app.on_event("startup")
 def _startup():

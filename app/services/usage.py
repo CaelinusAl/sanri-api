@@ -5,9 +5,9 @@ from app.models.usage import Usage
 from app.models.user import User
 
 LIMITS = {
-    "free": 200,
+    "free": 47,
     "premium": 74,
-    "elite": 10**9,   # effectively unlimited
+    "elite": 999999,   # effectively unlimited
 }
 
 def utc_today():
