@@ -16,14 +16,10 @@ from openai import OpenAI
 
 from app.db import get_db
 from app.services.usage import check_and_increment
-
-# Module registry (projende neredeyse oradan import et)
 from app.modules.registry import REGISTRY  # type: ignore
-
-# Prompt version (projende neredeyse oradan import et)
 from app.prompts.system_base import SANRI_PROMPT_VERSION  # type: ignore
 
-# DB models (opsiyonel)
+# Optional DB models
 try:
     from app.models.event import Event  # type: ignore
 except Exception:
@@ -44,6 +40,8 @@ MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "900"))
 MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10"))
 MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200"))
 
+SANRI_DEBUG = (os.getenv("SANRI_DEBUG") or "").strip() in ("1", "true", "TRUE", "yes", "YES")
+
 MEM: Dict[str, Deque[Tuple[str, str]]] = defaultdict(lambda: deque(maxlen=MEM_TURNS * 2))
 LAST_SEEN: Dict[str, float] = {}
 
@@ -53,11 +51,9 @@ ALLOWED_GATE_MODES = {"mirror", "dream", "divine", "shadow", "light"}
 
 def ensure_json_obj(text: str) -> Dict[str, Any]:
     raw = (text or "").strip()
-
     if raw.startswith("```"):
-        raw = raw.strip("`").strip()
-        if raw.lower().startswith("json"):
-            raw = raw[4:].strip()
+        raw = raw.strip("`")
+        raw = raw.replace("json", "", 1).strip()
 
     try:
         obj = json.loads(raw)
@@ -65,7 +61,7 @@ def ensure_json_obj(text: str) -> Dict[str, Any]:
             return obj
         return {"error": "invalid_json", "reason": "not_object", "raw": raw[:800]}
     except Exception:
-        # ilk { ... } bloğunu yakala
+        # Try to extract first {...} block
         try:
             start = raw.find("{")
             end = raw.rfind("}")
@@ -81,8 +77,8 @@ def ensure_json_obj(text: str) -> Dict[str, Any]:
 def get_client() -> OpenAI:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing or empty")
-    # Render cold-start + OpenAI gecikmeleri için timeout
+        raise HTTPException(status_code=500, detail={"code": "OPENAI_KEY_MISSING"})
+    # timeout: Render cold start + LLM gecikmesi için
     return OpenAI(api_key=api_key, timeout=60)
 
 
@@ -96,15 +92,11 @@ def gc_sessions() -> None:
         MEM.pop(sid, None)
 
 
-def touch(sid: str) -> None:
-    LAST_SEEN[sid] = time.time()
-
-
 def remember(sid: str, role: str, content: str) -> None:
     if not content:
         return
     MEM[sid].append((role, content))
-    touch(sid)
+    LAST_SEEN[sid] = time.time()
 
 
 def history_messages(sid: str) -> List[dict]:
@@ -128,90 +120,7 @@ def extract_mode_and_clean(text: str) -> Tuple[str, str]:
     return (mode, cleaned)
 
 
-def safe_domain(req_dict: dict) -> str:
-    d = (req_dict.get("domain") or "").strip()
-    return d if d else "auto"
-
-
-def safe_meta(req_dict: dict, context: dict) -> dict:
-    ctx = context or {}
-    return {
-        "domain": req_dict.get("domain"),
-        "gate_mode": req_dict.get("gate_mode"),
-        "persona": req_dict.get("persona"),
-        "lang": req_dict.get("lang"),
-        "plate": req_dict.get("plate"),
-        "context_source": ctx.get("source"),
-        "context_intent": ctx.get("intent"),
-        "city_code": ctx.get("city_code"),
-        "layer": ctx.get("layer"),
-        "target": ctx.get("target"),
-        "title": ctx.get("title"),
-    }
-
-
-def db_log_event(db: Session, user_id: Optional[str], action: str, domain: str, meta: dict) -> None:
-    if Event is None:
-        return
-    try:
-        ev = Event(user_id=user_id, action=action, domain=domain, meta=meta or None)
-        db.add(ev)
-        db.commit()
-    except Exception:
-        db.rollback()
-
-
-def db_save_memory(db: Session, user_id: Optional[str], mem_type: str, context: dict, input_text: str, output_text: str) -> None:
-    if Memory is None:
-        return
-    try:
-        m = Memory(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            type=mem_type or "auto",
-            context=context or None,
-            input_text=input_text or "",
-            output_text=output_text or "",
-        )
-        db.add(m)
-        db.commit()
-    except Exception:
-        db.rollback()
-
-
-class AskRequest(BaseModel):
-    message: Optional[str] = None
-    question: Optional[str] = None
-    session_id: Optional[str] = "default"
-
-    domain: Optional[str] = "auto"
-    gate_mode: Optional[str] = "mirror"
-    persona: Optional[str] = "user"
-    plate: Optional[str] = None
-
-    context: Optional[dict] = None
-    lang: Optional[str] = None
-
-    # eski client uyumluluğu
-    mode: Optional[str] = Field(default=None)
-
-    def text(self) -> str:
-        return (self.message or self.question or "").strip()
-
-
-class AskResponse(BaseModel):
-    response: str
-    session_id: str
-    prompt_version: str
-
-    module: str = "mirror"
-    title: str = "Sanrı"
-    answer: str = ""
-    sections: List[dict] = []
-    tags: List[str] = []
-
-
-def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
+def normalize_req(req: "AskRequest", raw_text: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
     cleaned_text = (raw_text or "").strip()
     tag_mode, cleaned_text = extract_mode_and_clean(cleaned_text)
 
@@ -221,6 +130,7 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str, 
     plate = (req.plate or "").strip()
     lang = (req.lang or "").strip().lower() or None
 
+    # old field: mode
     if req.mode:
         m = str(req.mode).strip().lower()
         if m in ALLOWED_GATE_MODES:
@@ -238,24 +148,98 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str, 
     if not isinstance(ctx, dict):
         ctx = {}
 
-    return (
-        {"domain": domain, "gate_mode": gate_mode, "persona": persona, "plate": plate, "lang": lang},
-        cleaned_text,
-        ctx,
-    )
+    req_dict = {"domain": domain, "gate_mode": gate_mode, "persona": persona, "plate": plate, "lang": lang}
+    return req_dict, cleaned_text, ctx
 
 
-def _pick_answer(reply_json: Dict[str, Any], out: Dict[str, Any], fallback_lang: str) -> str:
+def safe_meta(req_dict: dict, ctx: dict, session_id: str, token_present: bool) -> dict:
+    ctx = ctx or {}
+    return {
+        "session_id": session_id,
+        "token_present": bool(token_present),
+        "domain": req_dict.get("domain"),
+        "gate_mode": req_dict.get("gate_mode"),
+        "persona": req_dict.get("persona"),
+        "lang": req_dict.get("lang"),
+        "plate": req_dict.get("plate"),
+        "context_source": ctx.get("source"),
+        "context_intent": ctx.get("intent"),
+        "city_code": ctx.get("city_code"),
+        "layer": ctx.get("layer"),
+        "target": ctx.get("target"),
+        "title": ctx.get("title"),
+    }
+
+
+def db_log_event(db: Session, action: str, domain: str, meta: dict) -> None:
+    if Event is None:
+        return
+    try:
+        ev = Event(user_id=None, action=action, domain=domain, meta=meta or None)
+        db.add(ev)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def db_save_memory(db: Session, mem_type: str, context: dict, input_text: str, output_text: str) -> None:
+    if Memory is None:
+        return
+    try:
+        m = Memory(
+            id=str(uuid.uuid4()),
+            user_id=None,
+            type=mem_type or "auto",
+            context=context or None,
+            input_text=input_text or "",
+            output_text=output_text or "",
+        )
+        db.add(m)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def pick_answer(reply_json: Dict[str, Any], out: Dict[str, Any], lang: str) -> str:
     if isinstance(out, dict):
         a = str(out.get("answer") or out.get("response") or "").strip()
         if a:
             return a
-
     a2 = str(reply_json.get("answer") or reply_json.get("response") or "").strip()
     if a2:
         return a2
+    return "Buradayım." if lang == "tr" else "I'm here."
 
-    return "Buradayım." if fallback_lang == "tr" else "I'm here."
+
+class AskRequest(BaseModel):
+    message: Optional[str] = None
+    question: Optional[str] = None
+    session_id: Optional[str] = "default"
+
+    domain: Optional[str] = "auto"
+    gate_mode: Optional[str] = "mirror"
+    persona: Optional[str] = "user"
+    plate: Optional[str] = None
+
+    context: Optional[dict] = None
+    lang: Optional[str] = None
+
+    # old clients
+    mode: Optional[str] = Field(default=None)
+
+    def text(self) -> str:
+        return (self.message or self.question or "").strip()
+
+
+class AskResponse(BaseModel):
+    response: str
+    answer: str
+    session_id: str
+    prompt_version: str
+    module: str = "mirror"
+    title: str = "Sanrı"
+    sections: List[dict] = []
+    tags: List[str] = []
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -265,147 +249,148 @@ def ask(
     x_sanri_token: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    gc_sessions()
-
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="X-User-Id missing")
-
-    session_id = (req.session_id or "default").strip() or "default"
-    raw_text = req.text()
-
-    if not raw_text:
-        return AskResponse(
-            response="",
-            answer="",
-            session_id=session_id,
-            prompt_version=SANRI_PROMPT_VERSION,
-            module="mirror",
-            title="Sanrı",
-            sections=[],
-            tags=[],
-        )
-
-    # LIMIT (tek kez)
     try:
-        usage = check_and_increment(db, x_user_id)
-    except Exception:
-        usage = {"ok": True, "role": "free", "used": 0, "limit": 47}
+        gc_sessions()
 
-    if not usage.get("ok", True):
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "code": "LIMIT_REACHED",
-                "role": usage.get("role", "free"),
-                "used": usage.get("used", 0),
-                "limit": usage.get("limit", 47),
-                "message_tr": "Günlük limit doldu. VIP ile açılır.",
-                "message_en": "Daily limit reached. Unlock VIP.",
-            },
-        )
+        if not x_user_id:
+            raise HTTPException(status_code=400, detail={"code": "X_USER_ID_MISSING"})
 
-    req_dict, cleaned_text, ctx_in = normalize_req(req, raw_text)
+        session_id = (req.session_id or "default").strip() or "default"
+        raw_text = req.text()
 
-    domain = safe_domain(req_dict)
-    module = REGISTRY.get(domain) or REGISTRY.get("auto")
-    if module is None:
-        raise HTTPException(status_code=500, detail="Module registry misconfigured (auto missing)")
+        if not raw_text:
+            return AskResponse(
+                response="",
+                answer="",
+                session_id=session_id,
+                prompt_version=SANRI_PROMPT_VERSION,
+                module="mirror",
+                title="Sanrı",
+                sections=[],
+                tags=[],
+            )
 
-    # preprocess
-    try:
-        ctx = module.preprocess(cleaned_text, {**req_dict, "context": ctx_in})
-    except TypeError:
-        ctx = module.preprocess(cleaned_text, req_dict)
+        # LIMIT (tek kez)
+        try:
+            usage = check_and_increment(db, x_user_id)
+        except Exception:
+            usage = {"ok": True, "role": "free", "used": 0, "limit": 47}
 
-    # prompts
-    try:
-        system_prompt = module.build_system(req_dict, ctx)
-        user_payload = module.build_user(req_dict, ctx)
-    except TypeError:
-        system_prompt = module.build_system({**req_dict, "context": ctx_in}, ctx)
-        user_payload = module.build_user({**req_dict, "context": ctx_in}, ctx)
+        if not usage.get("ok", True):
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code": "LIMIT_REACHED",
+                    "role": usage.get("role", "free"),
+                    "used": usage.get("used", 0),
+                    "limit": usage.get("limit", 47),
+                    "message_tr": "Günlük limit doldu. Elite Katman ile sınırsız erişim açılır.",
+                    "message_en": "Daily limit reached. Elite unlocks unlimited access.",
+                },
+            )
 
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history_messages(session_id))
-    messages.append({"role": "user", "content": user_payload})
+        req_dict, cleaned_text, ctx_in = normalize_req(req, raw_text)
+        domain = (req_dict.get("domain") or "auto").strip() or "auto"
 
-    # DB event log (opsiyonel)
-    meta = safe_meta(req_dict, ctx_in)
-    meta["session_id"] = session_id
-    meta["token_present"] = bool(x_sanri_token)
-    db_log_event(db, user_id=None, action="ask", domain=domain, meta=meta)
+        module = REGISTRY.get(domain) or REGISTRY.get("auto")
+        if module is None:
+            raise HTTPException(status_code=500, detail={"code": "REGISTRY_MISSING_AUTO"})
 
-    client = get_client()
+        # preprocess
+        try:
+            ctx = module.preprocess(cleaned_text, {**req_dict, "context": ctx_in})
+        except TypeError:
+            ctx = module.preprocess(cleaned_text, req_dict)
 
-    # LLM
-    try:
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            temperature=TEMPERATURE,
-            max_tokens=MAX_TOKENS,
-        )
-        reply_text = (completion.choices[0].message.content or "").strip()
-        reply_json = ensure_json_obj(reply_text)
+        # prompts
+        try:
+            system_prompt = module.build_system(req_dict, ctx)
+            user_payload = module.build_user(req_dict, ctx)
+        except TypeError:
+            system_prompt = module.build_system({**req_dict, "context": ctx_in}, ctx)
+            user_payload = module.build_user({**req_dict, "context": ctx_in}, ctx)
 
-    except Exception as e:
-        # JSON döndür (frontend NON_JSON görmesin)
-        print("SANRI LLM ERROR:", repr(e))
-        print(traceback.format_exc())
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history_messages(session_id))
+        messages.append({"role": "user", "content": user_payload})
 
-        fallback = "Sanrı şu an uyanıyor. Tekrar dene." if (req_dict.get("lang") or "tr") != "en" else "Sanri is waking. Try again."
+        # event log (opsiyonel)
+        try:
+            meta = safe_meta(req_dict, ctx_in, session_id=session_id, token_present=bool(x_sanri_token))
+            db_log_event(db, action="ask", domain=domain, meta=meta)
+        except Exception:
+            pass
+
+        client = get_client()
+
+        # LLM
+        try:
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS,
+            )
+            reply_text = (completion.choices[0].message.content or "").strip()
+            reply_json = ensure_json_obj(reply_text)
+        except HTTPException:
+            raise
+        except Exception as e:
+            detail = {"code": "LLM_ERROR", "message": str(e), "model": MODEL_NAME}
+            if SANRI_DEBUG:
+                detail["trace"] = traceback.format_exc()[-2500:]
+            raise HTTPException(status_code=500, detail=detail)
+
+        # postprocess
+        try:
+            out = module.postprocess(reply_json, req_dict, ctx) or {}
+        except TypeError:
+            out = module.postprocess(reply_json, req_dict) or {}
+
+        lang = (req_dict.get("lang") or "tr").lower()
+        if lang not in ("tr", "en"):
+            lang = "tr"
+
+        answer = pick_answer(reply_json, out, lang)
+
         remember(session_id, "user", cleaned_text)
-        remember(session_id, "assistant", fallback)
+        remember(session_id, "assistant", answer)
+
+        # db memory (opsiyonel)
+        try:
+            db_save_memory(
+                db,
+                mem_type=domain,
+                context={
+                    "session_id": session_id,
+                    "domain": domain,
+                    "gate_mode": req_dict.get("gate_mode"),
+                    "lang": req_dict.get("lang"),
+                    "source": (ctx_in or {}).get("source"),
+                    "intent": (ctx_in or {}).get("intent"),
+                },
+                input_text=cleaned_text,
+                output_text=answer,
+            )
+        except Exception:
+            pass
 
         return AskResponse(
-            response=fallback,
-            answer=fallback,
+            response=answer,
+            answer=answer,
             session_id=session_id,
             prompt_version=SANRI_PROMPT_VERSION,
-            module="error",
-            title="Sanrı",
-            sections=[],
-            tags=["llm_error"],
+            module=str(out.get("module") or domain),
+            title=str(out.get("title") or "Sanrı"),
+            sections=list(out.get("sections") or []),
+            tags=list(out.get("tags") or []),
         )
 
-    # postprocess (try/except DIŞINDA)
-    try:
-        out = module.postprocess(reply_json, req_dict, ctx) or {}
-    except TypeError:
-        out = module.postprocess(reply_json, req_dict) or {}
-
-    lang = (req_dict.get("lang") or "tr").lower()
-    if lang not in ("tr", "en"):
-        lang = "tr"
-
-    answer = _pick_answer(reply_json, out, lang)
-
-    remember(session_id, "user", cleaned_text)
-    remember(session_id, "assistant", answer)
-
-    db_save_memory(
-        db,
-        user_id=None,
-        mem_type=domain,
-        context={
-            "session_id": session_id,
-            "domain": domain,
-            "gate_mode": req_dict.get("gate_mode"),
-            "lang": req_dict.get("lang"),
-            "source": (ctx_in or {}).get("source"),
-            "intent": (ctx_in or {}).get("intent"),
-        },
-        input_text=cleaned_text,
-        output_text=answer,
-    )
-
-    return AskResponse(
-        response=answer,
-        answer=answer,
-        session_id=session_id,
-        prompt_version=SANRI_PROMPT_VERSION,
-        module=str(out.get("module") or domain),
-        title=str(out.get("title") or "Sanrı"),
-        sections=list(out.get("sections") or []),
-        tags=list(out.get("tags") or []),
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # EN KRİTİK: burası sayesinde artık "text/plain Internal Server Error" olmaz
+        detail = {"code": "UNHANDLED", "message": str(e)}
+        if SANRI_DEBUG:
+            detail["trace"] = traceback.format_exc()[-2500:]
+        raise HTTPException(status_code=500, detail=detail)
