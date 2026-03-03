@@ -250,13 +250,6 @@ def _pick_answer(reply_json: Dict[str, Any], out: Dict[str, Any], fallback_lang:
     return "Buradayım." if fallback_lang == "tr" else "I'm here."
 
 
-@router.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    print("GLOBAL ERROR:", repr(exc))
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal Server Error"},
-    )
 
 
 @router.post("/ask", response_model=AskResponse)
