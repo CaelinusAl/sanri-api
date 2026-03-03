@@ -2,9 +2,6 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import httpx
-print("HTTPX_VERSION =", httpx.__version__)
-
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
