@@ -278,59 +278,40 @@ def ask(
 ):
     gc_sessions()
 
-    # ✅ USER ID zorunlu
     if not x_user_id:
-        raise HTTPException(status_code=400, detail={"code": "X_USER_ID_MISSING", "message": "X-User-Id missing"})
+        raise HTTPException(status_code=400, detail={"code": "X_USER_ID_MISSING"})
 
     session_id = (req.session_id or "default").strip() or "default"
     raw_text = req.text()
 
-    # boş mesaj
     if not raw_text:
         return AskResponse(
             response="",
             answer="",
             session_id=session_id,
             prompt_version=SANRI_PROMPT_VERSION,
-            module="mirror",
-            title="Sanrı",
-            sections=[],
-            tags=[],
         )
 
-    # ✅ LIMIT KONTROL (tek kez)
     try:
-        usage = check_and_increment(db, str(x_user_id))
+        usage = check_and_increment(db, x_user_id)
     except Exception:
-        usage = {"ok": True, "role": "free", "used": 0, "limit": 47}
+        usage = {"ok": True}
 
     if not usage.get("ok", True):
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "code": "LIMIT_REACHED",
-                "role": usage.get("role", "free"),
-                "used": usage.get("used", 0),
-                "limit": usage.get("limit", 47),
-                "message_tr": "Günlük limit doldu. Elite Katman ile sınırsız erişim açılır.",
-                "message_en": "Daily limit reached. Elite unlocks unlimited access.",
-            },
-        )
+        raise HTTPException(status_code=402, detail={"code": "LIMIT_REACHED"})
 
     req_dict, cleaned_text, ctx_in = normalize_req(req, raw_text)
 
     domain = safe_domain(req_dict)
     module = REGISTRY.get(domain) or REGISTRY.get("auto")
     if module is None:
-        raise HTTPException(status_code=500, detail={"code": "REGISTRY_MISCONFIG", "message": "auto missing"})
+        raise HTTPException(status_code=500, detail="MODULE_NOT_FOUND")
 
-    # preprocess
     try:
         ctx = module.preprocess(cleaned_text, {**req_dict, "context": ctx_in})
     except TypeError:
         ctx = module.preprocess(cleaned_text, req_dict)
 
-    # prompts
     try:
         system_prompt = module.build_system(req_dict, ctx)
         user_payload = module.build_user(req_dict, ctx)
@@ -342,22 +323,7 @@ def ask(
     messages.extend(history_messages(session_id))
     messages.append({"role": "user", "content": user_payload})
 
-    # DB event log (opsiyonel)
-    meta = safe_meta(req_dict, ctx_in)
-    meta["session_id"] = session_id
-    meta["token_present"] = bool(x_sanri_token)
-    db_log_event(db, user_id=None, action="ask", domain=domain, meta=meta)
-
-    # --- LLM ---
     client = get_client()
-
-    # DEBUG (Render logs)
-    print("MODEL_NAME:", MODEL_NAME)
-    print("MESSAGES_COUNT:", len(messages))
-    try:
-        print("SYSTEM_PROMPT_LEN:", len(messages[0].get("content") or ""))
-    except Exception:
-        pass
 
     try:
         completion = client.chat.completions.create(
@@ -366,20 +332,17 @@ def ask(
             temperature=TEMPERATURE,
             max_tokens=MAX_TOKENS,
         )
+
         reply_text = (completion.choices[0].message.content or "").strip()
-        print("LLM_REPLY_HEAD:", reply_text[:200])
         reply_json = ensure_json_obj(reply_text)
 
     except Exception as e:
-        print("SANRI LLM ERROR")
-        print("ERR:", repr(e))
-        print(traceback.format_exc())
+        print("LLM ERROR:", repr(e))
         raise HTTPException(
             status_code=500,
-            detail={"code": "LLM_ERROR", "message": str(e), "model": MODEL_NAME},
+            detail={"code": "LLM_ERROR", "message": str(e)},
         )
 
-    # postprocess
     try:
         out = module.postprocess(reply_json, req_dict, ctx) or {}
     except TypeError:
@@ -391,26 +354,8 @@ def ask(
 
     answer = _pick_answer(reply_json, out, lang)
 
-    # memory
     remember(session_id, "user", cleaned_text)
     remember(session_id, "assistant", answer)
-
-    # DB memory
-    db_save_memory(
-        db,
-        user_id=None,
-        mem_type=domain,
-        context={
-            "session_id": session_id,
-            "domain": domain,
-            "gate_mode": req_dict.get("gate_mode"),
-            "lang": req_dict.get("lang"),
-            "source": (ctx_in or {}).get("source"),
-            "intent": (ctx_in or {}).get("intent"),
-        },
-        input_text=cleaned_text,
-        output_text=answer,
-    )
 
     return AskResponse(
         response=answer,
