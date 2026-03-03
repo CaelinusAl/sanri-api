@@ -39,7 +39,7 @@ router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
 MODEL_NAME = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 TEMPERATURE = float(os.getenv("SANRI_TEMPERATURE", "0.55"))
-MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "800"))  # Render için daha güvenli
+MAX_TOKENS = int(os.getenv("SANRI_MAX_TOKENS", "800"))
 
 MEM_TURNS = int(os.getenv("SANRI_MEMORY_TURNS", "10"))
 MEM_TTL = int(os.getenv("SANRI_MEMORY_TTL", "7200"))
@@ -59,13 +59,14 @@ def ensure_json_obj(text: str) -> Dict[str, Any]:
         raw = raw.strip("`")
         raw = raw.replace("json", "", 1).strip()
 
+    # Direkt parse
     try:
         obj = json.loads(raw)
         if isinstance(obj, dict):
             return obj
         return {"error": "invalid_json", "reason": "not_object", "raw": raw[:800]}
     except Exception:
-        # JSON içinde ilk { ... } bloğunu yakalamayı dene
+        # JSON içinden ilk {...} bloğunu yakala
         try:
             start = raw.find("{")
             end = raw.rfind("}")
@@ -76,21 +77,21 @@ def ensure_json_obj(text: str) -> Dict[str, Any]:
         except Exception:
             pass
 
-        return {"error": "invalid_json", "raw": raw[:800]}
+    return {"error": "invalid_json", "raw": raw[:800]}
 
 
 def get_client() -> OpenAI:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY missing or empty")
-    # Render uyanma / OpenAI gecikmesi için timeout'u büyüt
+        raise HTTPException(status_code=500, detail={"code": "OPENAI_KEY_MISSING"})
+    # Render cold start + OpenAI gecikmesi için timeout büyütüyoruz
     return OpenAI(api_key=api_key, timeout=45)
 
 
 def gc_sessions() -> None:
-    now = time.time()
     if MEM_TTL <= 0:
         return
+    now = time.time()
     dead = [sid for sid, ts in LAST_SEEN.items() if now - ts > MEM_TTL]
     for sid in dead:
         LAST_SEEN.pop(sid, None)
@@ -162,7 +163,14 @@ def db_log_event(db: Session, user_id: Optional[str], action: str, domain: str, 
         db.rollback()
 
 
-def db_save_memory(db: Session, user_id: Optional[str], mem_type: str, context: dict, input_text: str, output_text: str) -> None:
+def db_save_memory(
+    db: Session,
+    user_id: Optional[str],
+    mem_type: str,
+    context: dict,
+    input_text: str,
+    output_text: str,
+) -> None:
     if Memory is None:
         return
     try:
@@ -201,10 +209,12 @@ class AskRequest(BaseModel):
 
 
 class AskResponse(BaseModel):
+    # backward
     response: str
     session_id: str
     prompt_version: str
 
+    # structured
     module: str = "mirror"
     title: str = "Sanrı"
     answer: str = ""
@@ -222,7 +232,6 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str, 
     plate = (req.plate or "").strip()
     lang = (req.lang or "").strip().lower() or None
 
-    # old field: mode
     if req.mode:
         m = str(req.mode).strip().lower()
         if m in ALLOWED_GATE_MODES:
@@ -248,13 +257,11 @@ def normalize_req(req: AskRequest, raw_text: str) -> Tuple[Dict[str, Any], str, 
 
 
 def _pick_answer(reply_json: Dict[str, Any], out: Dict[str, Any], fallback_lang: str) -> str:
-    # 1) module.postprocess cevabı
     if isinstance(out, dict):
         a = str(out.get("answer") or out.get("response") or "").strip()
         if a:
             return a
 
-    # 2) model json cevabı
     a2 = str(reply_json.get("answer") or reply_json.get("response") or "").strip()
     if a2:
         return a2
@@ -271,9 +278,9 @@ def ask(
 ):
     gc_sessions()
 
-    # ✅ USER ID zorunlu (limit sistemi için)
+    # ✅ USER ID zorunlu
     if not x_user_id:
-        raise HTTPException(status_code=400, detail="X-User-Id missing")
+        raise HTTPException(status_code=400, detail={"code": "X_USER_ID_MISSING", "message": "X-User-Id missing"})
 
     session_id = (req.session_id or "default").strip() or "default"
     raw_text = req.text()
@@ -293,9 +300,8 @@ def ask(
 
     # ✅ LIMIT KONTROL (tek kez)
     try:
-        usage = check_and_increment(db, x_user_id)
+        usage = check_and_increment(db, str(x_user_id))
     except Exception:
-        # DB yoksa / tablo yoksa sistemi öldürme
         usage = {"ok": True, "role": "free", "used": 0, "limit": 47}
 
     if not usage.get("ok", True):
@@ -316,7 +322,7 @@ def ask(
     domain = safe_domain(req_dict)
     module = REGISTRY.get(domain) or REGISTRY.get("auto")
     if module is None:
-        raise HTTPException(status_code=500, detail="Module registry misconfigured (auto missing)")
+        raise HTTPException(status_code=500, detail={"code": "REGISTRY_MISCONFIG", "message": "auto missing"})
 
     # preprocess
     try:
@@ -342,7 +348,16 @@ def ask(
     meta["token_present"] = bool(x_sanri_token)
     db_log_event(db, user_id=None, action="ask", domain=domain, meta=meta)
 
+    # --- LLM ---
     client = get_client()
+
+    # DEBUG (Render logs)
+    print("MODEL_NAME:", MODEL_NAME)
+    print("MESSAGES_COUNT:", len(messages))
+    try:
+        print("SYSTEM_PROMPT_LEN:", len(messages[0].get("content") or ""))
+    except Exception:
+        pass
 
     try:
         completion = client.chat.completions.create(
@@ -352,14 +367,17 @@ def ask(
             max_tokens=MAX_TOKENS,
         )
         reply_text = (completion.choices[0].message.content or "").strip()
+        print("LLM_REPLY_HEAD:", reply_text[:200])
         reply_json = ensure_json_obj(reply_text)
+
     except Exception as e:
         print("SANRI LLM ERROR")
-        print(repr(e))
+        print("ERR:", repr(e))
         print(traceback.format_exc())
-        print("PROMPT_VERSION:", SANRI_PROMPT_VERSION)
-        print("SESSION:", session_id)
-        raise HTTPException(status_code=500, detail="LLM_ERROR: " + str(e))
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "LLM_ERROR", "message": str(e), "model": MODEL_NAME},
+        )
 
     # postprocess
     try:
