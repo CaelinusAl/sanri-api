@@ -1,0 +1,15 @@
+name: Daily Stream Generate
+on:
+  schedule:
+    - cron: "10 6 * * *"  # UTC 06:10 (TR 09:10)
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call generator
+        run: |
+          curl -sS -X POST "https://sanri-api-2.onrender.com/stream/admin/generate" \
+            -H "X-Sanri-Token: ${{ secrets.SANRI_ADMIN_TOKEN }}" \
+            -H "Accept: application/json"

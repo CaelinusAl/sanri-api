@@ -1,21 +1,48 @@
-from fastapi import APIRouter
-from pathlib import Path
-import json
+# app/routes/content.py
+import os
+from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.services.daily_stream import get_or_create_daily
 
 router = APIRouter(prefix="/content", tags=["content"])
 
-BASE_DIR = Path(_file_).resolve().parents[1] / "content"
+def _require_cron_secret(x_cron_token: str | None):
+    secret = (os.getenv("CRON_SECRET") or "").strip()
+    if not secret:
+        return # secret yoksa zorunlu yapmıyoruz (istersen zorunluya çeviririz)
+    if (x_cron_token or "").strip() != secret:
+        raise HTTPException(status_code=401, detail={"code": "CRON_UNAUTHORIZED"})
 
-@router.get("/book/{name}")
-def get_book(name: str):
-    path = BASE_DIR / "book" / f"{name}.json"
-    if not path.exists():
-        return {"error": "Book not found"}
-    return json.loads(path.read_text(encoding="utf-8"))
+@router.get("/daily_stream")
+def daily_stream(
+    lang: str = "tr",
+    x_cron_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    # Eğer cron’dan çağırıyorsan koruyalım
+    # mobil de çağırabilir; secret boşsa serbest
+    # secret doluysa mobilde header göndermeyeceği için sadece cron kullansın diye
+    # şu satırı istersen kapatırız:
+    # _require_cron_secret(x_cron_token)
 
-@router.get("/ritual/{name}")
-def get_ritual(name: str):
-    path = BASE_DIR / "rituals" / f"{name}.json"
-    if not path.exists():
-        return {"error": "Ritual not found"}
-    return json.loads(path.read_text(encoding="utf-8"))
+    row = get_or_create_daily(db, lang=lang)
+    return {
+        "day": str(row.day),
+        "lang": row.lang,
+        "title": row.title,
+        "body": row.body,
+        "tags": [t for t in (row.tags or "").split(",") if t],
+    }
+
+@router.post("/daily_stream/generate")
+def daily_stream_generate(
+    lang: str = "tr",
+    x_cron_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    # Cron job buradan çağırır (güvenli)
+    _require_cron_secret(x_cron_token)
+    row = get_or_create_daily(db, lang=lang)
+    return {"ok": True, "day": str(row.day), "lang": row.lang}
