@@ -1,30 +1,45 @@
-from datetime import datetime, timedelta
-from fastapi import APIRouter, Header, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.db import get_db
-from app.services.user_repo import get_or_create_user
+import os
+import json
+from fastapi import APIRouter, HTTPException, Query
 
-router = APIRouter(prefix="/premium", tags=["premium"])
+router = APIRouter(prefix="/content", tags=["content"])
 
-@router.get("/status")
-def premium_status(
-    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
-    db: Session = Depends(get_db),
-):
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="Missing X-User-Id")
-    user = get_or_create_user(db, x_user_id)
+RITUALS_DIR = os.path.join(os.path.dirname(__file__), "..", "content", "rituals")
+RITUALS_DIR = os.path.abspath(RITUALS_DIR)
 
-    days_left = None
-    if user.last_matrix_deep_analysis:
-        next_allowed = user.last_matrix_deep_analysis + timedelta(days=30)
-        now = datetime.utcnow()
-        if now < next_allowed:
-            days_left = max(0, (next_allowed - now).days)
-        else:
-            days_left = 0
+def _safe_load_json(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        raise HTTPException(status_code=500, detail={"code": "RITUAL_JSON_READ_FAILED"})
 
-    return {
-        "is_premium": bool(user.is_premium),
-        "days_left": days_left, # None | 0..30
-    }
+@router.get("/ritual-packs")
+def ritual_packs():
+    if not os.path.isdir(RITUALS_DIR):
+        return {"items": []}
+
+    items = []
+    for fn in os.listdir(RITUALS_DIR):
+        if not fn.endswith(".json"):
+            continue
+        path = os.path.join(RITUALS_DIR, fn)
+        obj = _safe_load_json(path)
+        items.append({
+            "ritual_pack_id": obj.get("ritual_pack_id") or fn.replace(".json", ""),
+            "mode": obj.get("mode") or "read_only",
+            "description": obj.get("description") or "",
+            "ritual_count": len(obj.get("rituals") or []),
+        })
+
+    # sabit sıralama
+    items.sort(key=lambda x: x["ritual_pack_id"])
+    return {"items": items}
+
+@router.get("/ritual-pack/{ritual_pack_id}")
+def ritual_pack_detail(ritual_pack_id: str):
+    fn = f"{ritual_pack_id}.json"
+    path = os.path.join(RITUALS_DIR, fn)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail={"code": "RITUAL_PACK_NOT_FOUND"})
+    return _safe_load_json(path)

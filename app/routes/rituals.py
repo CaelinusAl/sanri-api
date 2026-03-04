@@ -1,50 +1,45 @@
 import os
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
-router = APIRouter(prefix="/rituals", tags=["rituals"])
+router = APIRouter(prefix="/content", tags=["content"])
 
-BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "content", "rituals")
+RITUALS_DIR = os.path.join(os.path.dirname(__file__), "..", "content", "rituals")
+RITUALS_DIR = os.path.abspath(RITUALS_DIR)
 
+def _safe_load_json(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        raise HTTPException(status_code=500, detail={"code": "RITUAL_JSON_READ_FAILED"})
 
-def read_pack(pack_id: str):
-    path = os.path.join(BASE_DIR, pack_id + ".json")
+@router.get("/ritual-packs")
+def ritual_packs():
+    if not os.path.isdir(RITUALS_DIR):
+        return {"items": []}
 
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="RITUAL_PACK_NOT_FOUND")
-
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-@router.get("/packs")
-def list_packs():
     items = []
-
-    for f in os.listdir(BASE_DIR):
-        if not f.endswith(".json"):
+    for fn in os.listdir(RITUALS_DIR):
+        if not fn.endswith(".json"):
             continue
+        path = os.path.join(RITUALS_DIR, fn)
+        obj = _safe_load_json(path)
+        items.append({
+            "ritual_pack_id": obj.get("ritual_pack_id") or fn.replace(".json", ""),
+            "mode": obj.get("mode") or "read_only",
+            "description": obj.get("description") or "",
+            "ritual_count": len(obj.get("rituals") or []),
+        })
 
-        path = os.path.join(BASE_DIR, f)
-
-        try:
-            with open(path, "r", encoding="utf-8") as fp:
-                obj = json.load(fp)
-
-            items.append(
-                {
-                    "ritual_pack_id": obj.get("ritual_pack_id"),
-                    "description": obj.get("description"),
-                    "count": len(obj.get("rituals", [])),
-                }
-            )
-
-        except Exception:
-            continue
-
+    # sabit sıralama
+    items.sort(key=lambda x: x["ritual_pack_id"])
     return {"items": items}
 
-
-@router.get("/packs/{pack_id}")
-def get_pack(pack_id: str):
-    return read_pack(pack_id)
+@router.get("/ritual-pack/{ritual_pack_id}")
+def ritual_pack_detail(ritual_pack_id: str):
+    fn = f"{ritual_pack_id}.json"
+    path = os.path.join(RITUALS_DIR, fn)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail={"code": "RITUAL_PACK_NOT_FOUND"})
+    return _safe_load_json(path)

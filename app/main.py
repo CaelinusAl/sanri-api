@@ -22,6 +22,7 @@ from app.models.base import Base
 from app.routes.content import router as content_router
 from app.routes.daily_stream import router as stream_router
 from app.routes.rituals import router as rituals_router
+from app.routes.consciousness import router as consciousness_router
 
 
 def _split_origins(v: str) -> list[str]:
@@ -105,3 +106,4 @@ app.include_router(sanri_voice_router)
 app.include_router(content_router)
 app.include_router(stream_router)
 app.include_router(rituals_router)
+app.include_router(consciousness_router)
