@@ -1,157 +1,201 @@
+# app/services/daily_stream.py
 import json
-import uuid
 from datetime import date, datetime
 from sqlalchemy.orm import Session
-from app.models.daily_stream import DailyStream, WeeklySymbol
-from openai import OpenAI
+from sqlalchemy.exc import IntegrityError
+
+from app.models.content import DailyStream, WeeklySymbol
+from app.routes.bilinc_alani import get_client, ensure_json_obj # aynı client + parser
 import os
 
-MODEL_NAME = (os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
-
-def _client() -> OpenAI:
-    key = (os.getenv("OPENAI_API_KEY") or "").strip()
-    if not key:
-        raise RuntimeError("OPENAI_API_KEY missing")
-    # ÖNEMLİ: proxies verme. (Senin o hatayı buradan aldın)
-    return OpenAI(api_key=key, timeout=60)
-
 def _week_key(d: date) -> str:
-    iso = d.isocalendar()
-    return f"{iso.year}-{iso.week:02d}"
+    iso_year, iso_week, _ = d.isocalendar()
+    return f"{iso_year}-{iso_week:02d}"
 
-def _ensure_dict(s: str) -> dict:
+def _safe_json_dumps(x) -> str:
     try:
-        obj = json.loads(s)
-        return obj if isinstance(obj, dict) else {"raw": s}
+        return json.dumps(x, ensure_ascii=False)
     except Exception:
-        return {"raw": s}
+        return "[]"
 
-def _gen_daily(lang: str) -> dict:
-    sys = "You are SANRI. Return ONLY valid JSON object. No markdown. No extra text."
-    if lang == "tr":
-        usr = """
-Bugün için "AI Consciousness Feed" üret.
-JSON şeması:
-{
-  "kicker": "🌙 Günün Bilinci",
-  "title": "... (maks 60 karakter)",
-  "subtitle": "... (maks 90 karakter)",
-  "text": "... (3-6 satır, şiirsel ama net)",
-  "question": "... (tek soru)",
-  "ritual": ["adım1","adım2","adım3","adım4"],
-  "tags": ["...","..."]
-}
-Yalnızca JSON döndür.
-"""
-    else:
-        usr = """
-Create today's "AI Consciousness Feed".
-JSON schema:
-{
-  "kicker": "🌙 Daily Consciousness",
-  "title": "... (max 60 chars)",
-  "subtitle": "... (max 90 chars)",
-  "text": "... (3-6 lines, poetic but clear)",
-  "question": "... (single question)",
-  "ritual": ["step1","step2","step3","step4"],
-  "tags": ["...","..."]
-}
-Return ONLY JSON.
-"""
-    c = _client()
-    r = c.chat.completions.create(
-        model=MODEL_NAME,
+def generate_daily(lang: str) -> dict:
+    """
+    LLM’den JSON üretir.
+    """
+    client = get_client()
+    model = (os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
+
+    prompt = (
+        "You are SANRI. Produce a DAILY CONSCIOUSNESS STREAM.\n"
+        "Return ONLY valid JSON object.\n"
+        "Schema:\n"
+        "{\n"
+        ' "title": "...",\n'
+        ' "short": "...",\n'
+        ' "message": "...",\n'
+        ' "tags": ["...","..."]\n'
+        "}\n"
+        f"Language: {lang}\n"
+        "Style: hypnotic, clean, premium, short paragraphs.\n"
+        "No markdown. No backticks.\n"
+    )
+
+    completion = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "Return JSON only."},
+            {"role": "user", "content": prompt},
+        ],
         temperature=0.7,
         max_tokens=900,
-        messages=[
-            {"role": "system", "content": sys},
-            {"role": "user", "content": usr.strip()},
-        ],
     )
-    txt = (r.choices[0].message.content or "").strip()
-    return _ensure_dict(txt)
 
-def _gen_weekly(lang: str) -> dict:
-    sys = "You are SANRI. Return ONLY valid JSON object. No markdown. No extra text."
-    if lang == "tr":
-        usr = """
-Bu hafta için "Haftanın Sembolü" üret.
-JSON şeması:
-{
-  "kicker": "🌻 Haftanın Sembolü",
-  "title": "...",
-  "subtitle": "...",
-  "text": "... (4-8 satır)",
-  "micro_practice": "... (tek cümle pratik)",
-  "tags": ["...","..."]
-}
-Yalnızca JSON döndür.
-"""
-    else:
-        usr = """
-Create "Symbol of the Week".
-JSON schema:
-{
-  "kicker": "🌻 Symbol of the Week",
-  "title": "...",
-  "subtitle": "...",
-  "text": "... (4-8 lines)",
-  "micro_practice": "... (one sentence practice)",
-  "tags": ["...","..."]
-}
-Return ONLY JSON.
-"""
-    c = _client()
-    r = c.chat.completions.create(
-        model=MODEL_NAME,
-        temperature=0.7,
-        max_tokens=900,
-        messages=[
-            {"role": "system", "content": sys},
-            {"role": "user", "content": usr.strip()},
-        ],
+    raw = (completion.choices[0].message.content or "").strip()
+    j = ensure_json_obj(raw)
+
+    # normalize
+    title = str(j.get("title") or "").strip() or ("Günlük Akış" if lang == "tr" else "Daily Stream")
+    short = str(j.get("short") or "").strip()
+    message = str(j.get("message") or "").strip() or ( "Bugün merkezde kal." if lang=="tr" else "Stay centered today." )
+    tags = j.get("tags") if isinstance(j.get("tags"), list) else []
+
+    return {"title": title, "short": short, "message": message, "tags": tags}
+
+def generate_weekly(lang: str) -> dict:
+    client = get_client()
+    model = (os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
+
+    prompt = (
+        "You are SANRI. Produce WEEKLY SYMBOL OF THE WEEK.\n"
+        "Return ONLY valid JSON object.\n"
+        "Schema:\n"
+        "{\n"
+        ' "title": "...",\n'
+        ' "subtitle": "...",\n'
+        ' "reading": "...",\n'
+        ' "tags": ["...","..."]\n'
+        "}\n"
+        f"Language: {lang}\n"
+        "Tone: sacred+futuristic, clear.\n"
+        "No markdown. No backticks.\n"
     )
-    txt = (r.choices[0].message.content or "").strip()
-    return _ensure_dict(txt)
+
+    completion = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "Return JSON only."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.75,
+        max_tokens=1100,
+    )
+
+    raw = (completion.choices[0].message.content or "").strip()
+    j = ensure_json_obj(raw)
+
+    title = str(j.get("title") or "").strip() or ("Haftanın Sembolü" if lang=="tr" else "Symbol of the Week")
+    subtitle = str(j.get("subtitle") or "").strip()
+    reading = str(j.get("reading") or "").strip() or ( "Bu hafta merkez." if lang=="tr" else "This week: center." )
+    tags = j.get("tags") if isinstance(j.get("tags"), list) else []
+
+    return {"title": title, "subtitle": subtitle, "reading": reading, "tags": tags}
 
 def get_or_create_daily(db: Session, lang: str) -> dict:
-    lang = (lang or "tr").lower()
-    if lang not in ("tr", "en"):
-        lang = "tr"
-
-    today = date.today()
-    row = db.query(DailyStream).filter(DailyStream.day == today, DailyStream.lang == lang).first()
+    d = date.today()
+    row = db.query(DailyStream).filter(DailyStream.day == d, DailyStream.lang == lang).first()
     if row:
-        return _ensure_dict(row.payload_json)
+        return {
+            "day": str(row.day),
+            "lang": row.lang,
+            "title": row.title,
+            "short": row.short,
+            "message": row.message,
+            "tags": json.loads(row.tags) if row.tags else [],
+        }
 
-    payload = _gen_daily(lang)
+    g = generate_daily(lang)
+
     row = DailyStream(
-        id=str(uuid.uuid4()),
-        day=today,
+        day=d,
         lang=lang,
-        payload_json=json.dumps(payload, ensure_ascii=False),
+        title=g["title"],
+        short=g["short"],
+        message=g["message"],
+        tags=_safe_json_dumps(g["tags"]),
     )
     db.add(row)
-    db.commit()
-    return payload
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # yarış olursa tekrar çek
+        row = db.query(DailyStream).filter(DailyStream.day == d, DailyStream.lang == lang).first()
+        if row:
+            return {
+                "day": str(row.day),
+                "lang": row.lang,
+                "title": row.title,
+                "short": row.short,
+                "message": row.message,
+                "tags": json.loads(row.tags) if row.tags else [],
+            }
+        raise
+
+    return {
+        "day": str(row.day),
+        "lang": row.lang,
+        "title": row.title,
+        "short": row.short,
+        "message": row.message,
+        "tags": g["tags"],
+    }
 
 def get_or_create_weekly(db: Session, lang: str) -> dict:
-    lang = (lang or "tr").lower()
-    if lang not in ("tr", "en"):
-        lang = "tr"
+    d = date.today()
+    wk = _week_key(d)
 
-    wk = _week_key(date.today())
     row = db.query(WeeklySymbol).filter(WeeklySymbol.week_key == wk, WeeklySymbol.lang == lang).first()
     if row:
-        return _ensure_dict(row.payload_json)
+        return {
+            "week": row.week_key,
+            "lang": row.lang,
+            "title": row.title,
+            "subtitle": row.subtitle,
+            "reading": row.reading,
+            "tags": json.loads(row.tags) if row.tags else [],
+        }
 
-    payload = _gen_weekly(lang)
+    g = generate_weekly(lang)
     row = WeeklySymbol(
-        id=str(uuid.uuid4()),
         week_key=wk,
         lang=lang,
-        payload_json=json.dumps(payload, ensure_ascii=False),
+        title=g["title"],
+        subtitle=g["subtitle"],
+        reading=g["reading"],
+        tags=_safe_json_dumps(g["tags"]),
     )
     db.add(row)
-    db.commit()
-    return payload
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        row = db.query(WeeklySymbol).filter(WeeklySymbol.week_key == wk, WeeklySymbol.lang == lang).first()
+        if row:
+            return {
+                "week": row.week_key,
+                "lang": row.lang,
+                "title": row.title,
+                "subtitle": row.subtitle,
+                "reading": row.reading,
+                "tags": json.loads(row.tags) if row.tags else [],
+            }
+        raise
+
+    return {
+        "week": row.week_key,
+        "lang": row.lang,
+        "title": row.title,
+        "subtitle": row.subtitle,
+        "reading": row.reading,
+        "tags": g["tags"],
+    }
