@@ -69,29 +69,35 @@ def _safe_str(x: Any) -> str:
 def ensure_json_obj(text: str) -> Dict[str, Any]:
     raw = (text or "").strip()
 
-    # allow json ... 
+    # ```json ... ``` veya ``` ... ``` temizle
     if raw.startswith("```"):
-        raw = raw.strip("`")
-        raw = raw.replace("json", "", 1).strip()
+        raw = raw.strip("`").strip()
+        if raw.lower().startswith("json"):
+            raw = raw[4:].strip()
 
-    # try full parse
+    # 1) Direkt JSON dict ise
     try:
         obj = json.loads(raw)
         if isinstance(obj, dict):
             return obj
-        return {"error": "invalid_json", "reason": "not_object", "raw": raw[:800]}
+        # JSON ama dict değilse bile metni answer gibi kullan
+        return {"answer": str(obj), "response": str(obj)}
     except Exception:
-        # try extract { ... }
-        try:
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                obj = json.loads(raw[start : end + 1])
-                if isinstance(obj, dict):
-                    return obj
-        except Exception:
-            pass
-        return {"error": "invalid_json", "raw": raw[:800]}
+        pass
+
+    # 2) İçinden ilk { ... } bloğunu yakalamayı dene
+    try:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            obj = json.loads(raw[start : end + 1])
+            if isinstance(obj, dict):
+                return obj
+    except Exception:
+        pass
+
+    # 3) Hâlâ JSON değilse: düz metni cevap kabul et (KRİTİK FIX)
+    return {"answer": raw, "response": raw}
 
 
 def get_client() -> OpenAI:
