@@ -5,6 +5,7 @@ from app.db import Base
 
 class DailyStream(Base):
     __tablename__ = "daily_stream"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(String, primary_key=True) # uuid
     day = Column(Date, nullable=False, index=True) # UTC date
@@ -22,6 +23,8 @@ class DailyStream(Base):
 
 class WeeklySymbol(Base):
     __tablename__ = "weekly_symbol"
+    __table_args__ = {"extend_existing": True}
+    
 
     id = Column(String, primary_key=True) # uuid
     week_key = Column(String, nullable=False, index=True) # "2026-W10"
