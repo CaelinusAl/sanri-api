@@ -23,7 +23,6 @@ from app.routes.content import router as content_router
 from app.routes.daily_stream import router as stream_router
 from app.routes.rituals import router as rituals_router
 from app.routes.consciousness import router as consciousness_router
-from app.routes.consciousness_feed import router as feed_router
 from app.routes.system_feed import router as system_feed_router
 
 
@@ -109,5 +108,4 @@ app.include_router(content_router)
 app.include_router(stream_router)
 app.include_router(rituals_router)
 app.include_router(consciousness_router)
-app.include_router(feed_router)
 app.include_router(system_feed_router)
