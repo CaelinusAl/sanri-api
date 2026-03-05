@@ -1,117 +1,121 @@
 # app/services/system_feed.py
-import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
-
-# Eğer DB modelin varsa kullan; yoksa sistem yine çalışsın diye try/except
-try:
-    from app.models.system_feed import SystemFeed # type: ignore
-except Exception:
-    SystemFeed = None # type: ignore
+from sqlalchemy import text
 
 
-def _today_key() -> str:
-    # YYYY-MM-DD
-    return time.strftime("%Y-%m-%d")
-
-
-def generate_daily_stub(lang: str = "tr") -> Dict[str, Any]:
-    """DB yoksa ya da model yoksa bile app çökmesin: demo içerik döndür."""
-    lang = (lang or "tr").lower()
-    if lang not in ("tr", "en"):
-        lang = "tr"
-
-    if lang == "tr":
-        return {
-            "date": _today_key(),
-            "title": "SYSTEM FEED",
-            "kicker": "GÜNLÜK AKIŞ",
-            "items": [
-                {
-                    "id": "signal",
-                    "title": "Sinyal",
-                    "text": "Bugün sistem senden hız değil, netlik istiyor.",
-                },
-                {
-                    "id": "pattern",
-                    "title": "Örüntü",
-                    "text": "Tekrarlayan döngüyü izle: hangi cümle seni aşağı çekiyor?",
-                },
-                {
-                    "id": "action",
-                    "title": "Tek Adım",
-                    "text": "1 küçük karar ver ve uygula. Büyük akış böyle açılır.",
-                },
-            ],
-        }
-
-    return {
-        "date": _today_key(),
-        "title": "SYSTEM FEED",
-        "kicker": "DAILY STREAM",
-        "items": [
-            {
-                "id": "signal",
-                "title": "Signal",
-                "text": "Today the system asks for clarity, not speed.",
-            },
-            {
-                "id": "pattern",
-                "title": "Pattern",
-                "text": "Watch the repeating loop: which sentence pulls you down?",
-            },
-            {
-                "id": "action",
-                "title": "One Step",
-                "text": "Make one small decision and do it. The stream opens like this.",
-            },
-        ],
-    }
+def _safe_lang(lang: Optional[str]) -> str:
+    v = (lang or "tr").strip().lower()
+    return v if v in ("tr", "en") else "tr"
 
 
 def get_latest_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
     """
-    1) SystemFeed modeli varsa DB’den bugün kaydı getir / yoksa stub döndür.
-    2) Model yoksa direkt stub.
+    DB'den en son system_feed_items kaydını döndürür.
+    UI için normalize edilmiş bir obje verir.
     """
-    lang = (lang or "tr").lower()
-    if lang not in ("tr", "en"):
-        lang = "tr"
+    lang = _safe_lang(lang)
 
-    if SystemFeed is None:
-        return generate_daily_stub(lang)
-
-    today = _today_key()
-    try:
-        row = (
-            db.query(SystemFeed)
-            .filter(SystemFeed.date == today)
-            .filter(SystemFeed.lang == lang)
-            .order_by(SystemFeed.created_at.desc())
-            .first()
+    row = db.execute(
+        text(
+            """
+            SELECT id, created_at, kind, title, subtitle, body_tr, body_en, source_url, tags
+            FROM system_feed_items
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
         )
-    except Exception:
-        row = None
+    ).fetchone()
 
     if not row:
-        # otomatik create (minimum)
-        payload = generate_daily_stub(lang)
-        try:
-            row = SystemFeed(
-                date=today,
-                lang=lang,
-                payload=payload,
-            )
-            db.add(row)
-            db.commit()
-        except Exception:
-            db.rollback()
-            return payload
+        # veri yoksa "boş ama anlamlı" fallback
+        return {
+            "items": [],
+            "latest": {
+                "signal": "Sistem sessiz." if lang == "tr" else "System is quiet.",
+                "symbol": "Henüz veri yok." if lang == "tr" else "No data yet.",
+                "message": "Yeni bir akış üretilecek." if lang == "tr" else "A new stream will be generated.",
+                "action": "Bekle" if lang == "tr" else "Wait",
+                "share": "",
+            },
+        }
 
-    # row.payload dict olmalı
+    message = (row.body_tr or "") if lang == "tr" else (row.body_en or row.body_tr or "")
+
+    latest = {
+        "id": row.id,
+        "created_at": str(row.created_at),
+        "kind": row.kind or "system",
+        "signal": row.title or "",
+        "symbol": row.subtitle or "",
+        "message": message,
+        "action": "Observe",
+        "share": "",
+        "source_url": row.source_url or "",
+        "tags": row.tags or "",
+    }
+
+    return {"items": [latest], "latest": latest}
+
+
+def generate_daily_stub(db: Session, lang: str = "tr") -> Dict[str, Any]:
+    """
+    DB'ye 1 adet system feed kaydı ekler.
+    Not: id otomatik artmıyorsa bile çalışsın diye MAX(id)+1 kullanır.
+    """
+    lang = _safe_lang(lang)
+
     try:
-        return row.payload if isinstance(row.payload, dict) else generate_daily_stub(lang)
-    except Exception:
-        return generate_daily_stub(lang)
+        next_id = db.execute(text("SELECT COALESCE(MAX(id), 0) + 1 FROM system_feed_items")).scalar()
+        next_id = int(next_id or 1)
+
+        body_tr = (
+            "Bugün sistem yeni bir bilinç katmanı açtı.\n"
+            "Kaos sandığın şey, düzenin görünmeyen hâli.\n"
+            "Tek adım: nefes al, ver, sadece gözlemle."
+        )
+        body_en = (
+            "Today the system opened a new layer of consciousness.\n"
+            "What looks like chaos is hidden order.\n"
+            "One step: inhale, exhale, simply observe."
+        )
+
+        title = "Yeni bilinç akışı başladı" if lang == "tr" else "A new stream started"
+        subtitle = "Sistem" if lang == "tr" else "System"
+
+        db.execute(
+            text(
+                """
+                INSERT INTO system_feed_items
+                (id, created_at, kind, title, subtitle, body_tr, body_en, source_url, tags)
+                VALUES
+                (:id, NOW(), :kind, :title, :subtitle, :body_tr, :body_en, :source_url, :tags)
+                """
+            ),
+            {
+                "id": next_id,
+                "kind": "system",
+                "title": title,
+                "subtitle": subtitle,
+                "body_tr": body_tr,
+                "body_en": body_en,
+                "source_url": "",
+                "tags": "system,signal",
+            },
+        )
+
+        db.commit()
+
+        return {
+            "status": "generated",
+            "id": next_id,
+            "lang": lang,
+            "title": title,
+            "subtitle": subtitle,
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "error": str(e)}
