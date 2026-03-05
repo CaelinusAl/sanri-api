@@ -1,53 +1,33 @@
+# app/routes/system_feed.py
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+
 from app.db import get_db
-from sqlalchemy import text
+from app.services.system_feed import get_latest_feed, generate_and_store_feed
 
 router = APIRouter(prefix="/content", tags=["content"])
 
+
 @router.get("/system-feed")
-def get_system_feed(lang: str = Query("tr"), db: Session = Depends(get_db)):
-
-    row = db.execute(text("""
-        SELECT title, subtitle, body_tr, body_en
-        FROM system_feed_items
-        ORDER BY created_at DESC
-        LIMIT 1
-    """)).fetchone()
-
-    if not row:
-        return {
-            "signal": "Sistem sessiz.",
-            "symbol": "Henüz veri yok.",
-            "message": "Yeni bir akış oluşturulacak.",
-            "action": "Bekle",
-            "share": ""
-        }
-
-    return {
-        "signal": row.title,
-        "symbol": row.subtitle,
-        "message": row.body_tr if lang == "tr" else row.body_en,
-        "action": "Observe",
-        "share": ""
-    }
+def system_feed(lang: str = Query(default="tr"), db: Session = Depends(get_db)):
+    lang = (lang or "tr").lower()
+    if lang not in ("tr", "en"):
+        lang = "tr"
+    return get_latest_feed(db, lang)
 
 
+# Mobil/tarayıcıda kolay test için GET de bırakıyorum
 @router.get("/system-feed/generate")
-def generate_system_feed(lang: str = Query("tr"), db: Session = Depends(get_db)):
+def system_feed_generate_get(lang: str = Query(default="tr"), db: Session = Depends(get_db)):
+    lang = (lang or "tr").lower()
+    if lang not in ("tr", "en"):
+        lang = "tr"
+    return generate_and_store_feed(db, lang)
 
-    db.execute(text("""
-        INSERT INTO system_feed_items
-        (kind,title,subtitle,body_tr,body_en,tags)
-        VALUES
-        ('system',
-        'Yeni bilinç akışı başladı',
-        'Sistem',
-        'Bugün sistem yeni bir bilinç katmanı açtı.',
-        'A new consciousness layer opened today.',
-        'system')
-    """))
 
-    db.commit()
-
-    return {"status": "generated"}
+@router.post("/system-feed/generate")
+def system_feed_generate_post(lang: str = Query(default="tr"), db: Session = Depends(get_db)):
+    lang = (lang or "tr").lower()
+    if lang not in ("tr", "en"):
+        lang = "tr"
+    return generate_and_store_feed(db, lang)

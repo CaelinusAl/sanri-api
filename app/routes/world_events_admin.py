@@ -9,7 +9,7 @@ from sqlalchemy import update
 from app.db import get_db
 from app.models.world_event import WorldEvent
 
-router = APIRouter(prefix="/admin/world-events", tags=["admin-world-events"])
+router = APIRouter(prefix="/world-events", tags=["world-events"])
 
 ADMIN_TOKEN = (os.getenv("SANRI_ADMIN_TOKEN") or "").strip()
 
