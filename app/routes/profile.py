@@ -1,41 +1,52 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from pydantic import BaseModel
-
 from app.db import get_db
 
-router = APIRouter()
+router = APIRouter(prefix="/profile", tags=["profile"])
 
-class ProfileUpdate(BaseModel):
-    name: str
-    bio: str
-    intention: str
-    language: str
 
-@router.post("/profile/update")
-def update_profile(data: ProfileUpdate, db: Session = Depends(get_db)):
+@router.get("")
+def get_profile(db: Session = Depends(get_db)):
 
-    db.execute(
-        text("""
+    row = db.execute(text("""
+        SELECT id, name, email, language, bio, intention, vip
+        FROM users
+        ORDER BY id DESC
+        LIMIT 1
+    """)).mappings().first()
+
+    if not row:
+        return {
+            "name": "",
+            "email": "",
+            "language": "tr",
+            "bio": "",
+            "intention": "",
+            "vip": False
+        }
+
+    return dict(row)
+
+
+@router.post("/update")
+def update_profile(data: dict, db: Session = Depends(get_db)):
+
+    db.execute(text("""
         UPDATE users
         SET
             name = :name,
+            email = :email,
+            language = :language,
             bio = :bio,
-            intention = :intention,
-            language = :language
+            intention = :intention
         WHERE id = (
-            SELECT id FROM users ORDER BY id DESC LIMIT 1
+            SELECT id FROM users
+            ORDER BY id DESC
+            LIMIT 1
         )
-        """),
-        {
-            "name": data.name,
-            "bio": data.bio,
-            "intention": data.intention,
-            "language": data.language
-        }
-    )
+    """), data)
 
     db.commit()
 
-    return {"ok": True}
+    return {"status": "ok"}
