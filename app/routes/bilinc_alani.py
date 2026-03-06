@@ -1,3 +1,4 @@
+
 # app/routes/bilinc_alani.py
 import os
 import re
@@ -16,19 +17,21 @@ from openai import OpenAI
 
 from app.db import get_db
 from app.services.usage import check_and_increment
+from app.services.memory import get_user_memory # DB memory read
+from app.services.insight_engine import build_user_insight
 
 # registry + prompt version
-from app.modules.registry import REGISTRY  # type: ignore
-from app.prompts.system_base import SANRI_PROMPT_VERSION  # type: ignore
+from app.modules.registry import REGISTRY # type: ignore
+from app.prompts.system_base import SANRI_PROMPT_VERSION # type: ignore
 
 # optional DB models
 try:
-    from app.models.event import Event  # type: ignore
+    from app.models.event import Event # type: ignore
 except Exception:
     Event = None
 
 try:
-    from app.models.memory import Memory  # type: ignore
+    from app.models.memory import Memory # type: ignore
 except Exception:
     Memory = None
 
@@ -69,23 +72,19 @@ def _safe_str(x: Any) -> str:
 def ensure_json_obj(text: str) -> Dict[str, Any]:
     raw = (text or "").strip()
 
-    # ```json ... ``` veya ``` ... ``` temizle
     if raw.startswith("```"):
         raw = raw.strip("`").strip()
         if raw.lower().startswith("json"):
             raw = raw[4:].strip()
 
-    # 1) Direkt JSON dict ise
     try:
         obj = json.loads(raw)
         if isinstance(obj, dict):
             return obj
-        # JSON ama dict değilse bile metni answer gibi kullan
         return {"answer": str(obj), "response": str(obj)}
     except Exception:
         pass
 
-    # 2) İçinden ilk { ... } bloğunu yakalamayı dene
     try:
         start = raw.find("{")
         end = raw.rfind("}")
@@ -96,7 +95,6 @@ def ensure_json_obj(text: str) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # 3) Hâlâ JSON değilse: düz metni cevap kabul et (KRİTİK FIX)
     return {"answer": raw, "response": raw}
 
 
@@ -104,8 +102,6 @@ def get_client() -> OpenAI:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise HTTPException(status_code=500, detail={"code": "OPENAI_KEY_MISSING"})
-    # Not: proxies hatası koddan değil, openai/httpx sürümünden gelir.
-    # Burada explicit proxies vermiyoruz.
     return OpenAI(api_key=api_key, timeout=60)
 
 
@@ -158,7 +154,6 @@ def normalize_req(req: "AskRequest", raw_text: str) -> Tuple[Dict[str, Any], str
     plate = (req.plate or "").strip()
     lang = (req.lang or "").strip().lower() or None
 
-    # legacy: mode
     if req.mode:
         m = _safe_str(req.mode).strip().lower()
         if m in ALLOWED_GATE_MODES:
@@ -176,18 +171,22 @@ def normalize_req(req: "AskRequest", raw_text: str) -> Tuple[Dict[str, Any], str
     if not isinstance(ctx, dict):
         ctx = {}
 
-    req_dict = {"domain": domain, "gate_mode": gate_mode, "persona": persona, "plate": plate, "lang": lang}
+    req_dict = {
+        "domain": domain,
+        "gate_mode": gate_mode,
+        "persona": persona,
+        "plate": plate,
+        "lang": lang,
+    }
     return req_dict, cleaned_text, ctx
 
 
 def pick_answer(reply_json: Dict[str, Any], out: Any, lang: str) -> str:
-    # 1) module.postprocess
     if isinstance(out, dict):
         a = _safe_str(out.get("answer") or out.get("response")).strip()
         if a:
             return a
 
-    # 2) model json
     a2 = _safe_str(reply_json.get("answer") or reply_json.get("response")).strip()
     if a2:
         return a2
@@ -250,6 +249,7 @@ class AskRequest(BaseModel):
     message: Optional[str] = None
     question: Optional[str] = None
     session_id: Optional[str] = "default"
+    insight: Optional[dict] = None
 
     domain: Optional[str] = "auto"
     gate_mode: Optional[str] = "mirror"
@@ -296,9 +296,11 @@ def ask(
     try:
         gc_sessions()
 
-        # header required
         if not x_user_id:
-            raise HTTPException(status_code=400, detail={"code": "X_USER_ID_MISSING", "message": "X-User-Id missing"})
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "X_USER_ID_MISSING", "message": "X-User-Id missing"},
+            )
 
         session_id = _safe_str(req.session_id or "default").strip() or "default"
         raw_text = req.text()
@@ -315,7 +317,6 @@ def ask(
                 tags=[],
             )
 
-        # LIMIT (one time)
         try:
             usage = check_and_increment(db, _safe_str(x_user_id))
         except Exception:
@@ -339,7 +340,6 @@ def ask(
 
         module = REGISTRY.get(domain) or REGISTRY.get("auto")
         if module is None:
-            # hard fallback
             answer = "Buradayım." if (req_dict.get("lang") or "tr") != "en" else "I'm here."
             remember(session_id, "user", cleaned_text)
             remember(session_id, "assistant", answer)
@@ -354,13 +354,11 @@ def ask(
                 tags=["fallback_registry"],
             )
 
-        # preprocess
         try:
             ctx = module.preprocess(cleaned_text, {**req_dict, "context": ctx_in})
         except TypeError:
             ctx = module.preprocess(cleaned_text, req_dict)
 
-        # prompts
         try:
             system_prompt = module.build_system(req_dict, ctx)
             user_payload = module.build_user(req_dict, ctx)
@@ -372,17 +370,42 @@ def ask(
         user_payload_s = _safe_str(user_payload)
 
         messages = [{"role": "system", "content": system_prompt_s}]
+
+        # ----------------------------
+        # DB memory -> prompt
+        # ----------------------------
+        try:
+            history = get_user_memory(db, int(_safe_str(x_user_id) or "0"))
+        except Exception:
+            history = []
+
+        context_memory = "\n".join(
+            [
+                f"Kullanıcı: {r.get('message', '')}\nSanrı: {r.get('response', '')}"
+                for r in (history or [])
+            ]
+        ).strip()
+
+        if context_memory:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"Kullanıcının geçmiş konuşmaları:\n{context_memory}",
+                }
+            )
+
+        # session memory
         messages.extend(history_messages(session_id))
+
+        # current user message
         messages.append({"role": "user", "content": user_payload_s})
 
-        # log event (best-effort)
         try:
             meta = safe_meta(req_dict, ctx_in, session_id=session_id, token_present=bool(x_sanri_token))
             db_log_event(db, action="ask", domain=domain, meta=meta)
         except Exception:
             pass
 
-        # LLM call
         client = get_client()
         try:
             completion = client.chat.completions.create(
@@ -392,7 +415,11 @@ def ask(
                 max_tokens=MAX_TOKENS,
             )
             reply_raw = completion.choices[0].message.content
-            reply_text = json.dumps(reply_raw, ensure_ascii=False) if isinstance(reply_raw, (dict, list)) else str(reply_raw or "").strip()
+            reply_text = (
+                json.dumps(reply_raw, ensure_ascii=False)
+                if isinstance(reply_raw, (dict, list))
+                else str(reply_raw or "").strip()
+            )
             reply_json = ensure_json_obj(reply_text)
         except HTTPException:
             raise
@@ -406,7 +433,6 @@ def ask(
                 detail["trace"] = traceback.format_exc()[-3500:]
             raise HTTPException(status_code=500, detail=detail)
 
-        # postprocess
         try:
             out = module.postprocess(reply_json, req_dict, ctx) or {}
         except TypeError:
@@ -419,12 +445,18 @@ def ask(
             lang = "tr"
 
         answer = pick_answer(reply_json, out, lang)
+        
+        # Sanrı kullanıcı içgörüsü oluştur
+        try:
+            insight = build_user_insight(db, int(x_user_id))
+        except Exception:
+            insight = None
 
-        # memory
+        # session memory
         remember(session_id, "user", cleaned_text)
         remember(session_id, "assistant", answer)
 
-        # db memory (best-effort)
+        # db memory log (best-effort)
         try:
             db_save_memory(
                 db,
@@ -436,6 +468,7 @@ def ask(
                     "lang": req_dict.get("lang"),
                     "source": (ctx_in or {}).get("source"),
                     "intent": (ctx_in or {}).get("intent"),
+                    "user_id": _safe_str(x_user_id),
                 },
                 input_text=cleaned_text,
                 output_text=answer,
@@ -452,13 +485,12 @@ def ask(
             title=_safe_str((out or {}).get("title") or "Sanrı"),
             sections=list((out or {}).get("sections") or []),
             tags=list((out or {}).get("tags") or []),
-        )
+            insight=insight
+)
 
     except HTTPException:
-        # FastAPI will serialize to JSON
         raise
     except Exception as e:
-        # NEVER return plain text error
         detail = {"code": "UNHANDLED", "message": str(e)}
         if SANRI_DEBUG:
             detail["trace"] = traceback.format_exc()[-3500:]
