@@ -1,17 +1,11 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
-from app.db import get_db
-from app.services.ritual_feed import latest_ritual, generate_ritual
+from fastapi import APIRouter
 
 router = APIRouter(prefix="/content", tags=["content"])
 
-
 @router.get("/ritual-feed")
-def ritual_feed(db: Session = Depends(get_db)):
-    return latest_ritual(db)
-
+def ritual_feed():
+    return {"ok": True, "type": "ritual-feed"}
 
 @router.get("/ritual-feed/generate")
-def ritual_generate(db: Session = Depends(get_db)):
-    return generate_ritual(db)
+def ritual_feed_generate():
+    return {"ok": True, "type": "ritual-generate"}
