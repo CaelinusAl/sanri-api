@@ -9,23 +9,36 @@ router = APIRouter()
 
 @router.get("/me")
 def get_me(db: Session = Depends(get_db)):
-    row = db.execute(text("""
-        SELECT id, name, email
-        FROM users
-        ORDER BY id DESC
-        LIMIT 1
-    """)).mappings().first()
+    try:
+        row = db.execute(
+            text("""
+                SELECT id, name, email
+                FROM users
+                ORDER BY id DESC
+                LIMIT 1
+            """)
+        ).mappings().first()
 
-    if not row:
+        if not row:
+            return {
+                "id": None,
+                "name": "Guest",
+                "email": "",
+                "vip": False
+            }
+
         return {
-            "name": "Guest",
-            "email": "",
+            "id": row.get("id"),
+            "name": row.get("name") or "Guest",
+            "email": row.get("email") or "",
             "vip": False
         }
 
-    return {
-        "id": row["id"],
-        "name": row["name"] or "Guest",
-        "email": row["email"] or "",
-        "vip": False
-    }
+    except Exception as e:
+        return {
+            "id": None,
+            "name": "Guest",
+            "email": "",
+            "vip": False,
+            "error": str(e)
+        }
