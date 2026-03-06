@@ -12,7 +12,7 @@ def get_me(db: Session = Depends(get_db)):
     try:
         row = db.execute(
             text("""
-                SELECT id, name, email
+                SELECT id, email
                 FROM users
                 ORDER BY id DESC
                 LIMIT 1
@@ -27,10 +27,13 @@ def get_me(db: Session = Depends(get_db)):
                 "vip": False
             }
 
+        email = row.get("email") or ""
+        guessed_name = email.split("@")[0] if email else "Guest"
+
         return {
             "id": row.get("id"),
-            "name": row.get("name") or "Guest",
-            "email": row.get("email") or "",
+            "name": guessed_name,
+            "email": email,
             "vip": False
         }
 
