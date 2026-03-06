@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from app.db import get_db
 from sqlalchemy import text
 
+from app.db import get_db
+
 router = APIRouter()
+
 
 @router.get("/me")
 def get_me(db: Session = Depends(get_db)):
@@ -23,7 +25,7 @@ def get_me(db: Session = Depends(get_db)):
 
     return {
         "id": row["id"],
-        "name": row["name"],
-        "email": row["email"],
+        "name": row["name"] or "Guest",
+        "email": row["email"] or "",
         "vip": False
     }
