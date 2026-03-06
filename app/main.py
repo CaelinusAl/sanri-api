@@ -25,7 +25,7 @@ from app.routes.rituals import router as rituals_router
 from app.routes.consciousness import router as consciousness_router
 from app.routes.system_feed import router as system_feed_router
 from app.routes.world_events import router as world_events_router
-from app.services.ritual_feed import latest_ritual, generate_ritual
+from app.routes.ritual_feed import router as ritual_feed_router
 
 
 def _split_origins(v: str) -> list[str]:
@@ -112,5 +112,5 @@ app.include_router(rituals_router)
 app.include_router(consciousness_router)
 app.include_router(system_feed_router)
 app.include_router(world_events_router)
-app.include_router(ritual_feed.router)
+app.include_router(ritual_feed_router)
 
