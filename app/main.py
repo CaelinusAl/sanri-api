@@ -30,6 +30,8 @@ from app.routes.me import router as me_router
 from app.routes.memory_profile import router as memory_router
 from app.routes.insights import router as insights_router
 from app.routes.profile import router as profile_router
+from app.routes.memory import router as memory_router
+from app.routes.activity import router as activity_router
 
 
 def _split_origins(v: str) -> list[str]:
@@ -121,3 +123,5 @@ app.include_router(me_router)
 app.include_router(memory_router)
 app.include_router(insights_router)
 app.include_router(profile_router)
+app.include_router(memory_router)
+app.include_router(activity_router)
