@@ -26,6 +26,8 @@ from app.routes.consciousness import router as consciousness_router
 from app.routes.system_feed import router as system_feed_router
 from app.routes.world_events import router as world_events_router
 from app.routes.ritual_feed import router as ritual_feed_router
+from app.routes.me import router as me_router
+from app.routes.memory_profile import router as memory_router
 
 
 def _split_origins(v: str) -> list[str]:
@@ -113,4 +115,6 @@ app.include_router(consciousness_router)
 app.include_router(system_feed_router)
 app.include_router(world_events_router)
 app.include_router(ritual_feed_router)
+app.include_router(me_router)
+app.include_router(memory_router)
 
