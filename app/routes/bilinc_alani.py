@@ -149,23 +149,14 @@ class AskRequest(BaseModel):
 
 
 class AskResponse(BaseModel):
-
     response: str
     answer: str
     session_id: str
-
     prompt_version: str
-
     module: str = "mirror"
-
     title: str = "Sanrı"
-
     sections: List[dict] = []
-
-    tags=list[str] = []
-
-    insight: Optional[dict] = None
-
+    tags: List[str] = []
 
 # ------------------------------------------------
 # Endpoint
