@@ -32,6 +32,8 @@ from app.routes.insights import router as insights_router
 from app.routes.profile import router as profile_router
 from app.routes.memory import router as memory_router
 from app.routes.activity import router as activity_router
+from app.services.feed_scheduler import start_scheduler
+
 
 
 def _split_origins(v: str) -> list[str]:
@@ -48,6 +50,10 @@ def _split_origins(v: str) -> list[str]:
 
 app = FastAPI()
 
+@app.on_event("startup")
+def start_background_jobs():
+    start_scheduler()
+      
 @app.get("/")
 def root():
     return {"status": "ok", "service": "SANRI API"}
