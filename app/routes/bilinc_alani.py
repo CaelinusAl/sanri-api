@@ -162,7 +162,7 @@ class AskResponse(BaseModel):
 
     sections: List[dict] = []
 
-    tags=list((out or {}).get("tags") or []) + [f"intuition:{intuition_signal}", f"consciousness:{consciousness}"],
+    tags=list[scr] = []
 
     insight: Optional[dict] = None
 
