@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict
 
 
 def detect_intuition_signal(user_memory: List[Dict] | None, current_text: str | None = None) -> str:
