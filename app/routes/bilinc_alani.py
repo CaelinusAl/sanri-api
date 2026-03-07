@@ -162,7 +162,7 @@ class AskResponse(BaseModel):
 
     sections: List[dict] = []
 
-    tags=list[scr] = []
+    tags=list[str] = []
 
     insight: Optional[dict] = None
 
