@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.services.sanri_consciousness_engine import detect_consciousness, build_consciousness_layer
+from app.services.intuition_engine import detect_intuition_signal, build_intuition_layer
 
 from openai import OpenAI
 
@@ -356,7 +357,10 @@ def ask(
             module=domain,
             title="Sanrı",
             sections=[],
-            tags=[],
+            tags=list((out or {}).get("tags") or []) + [
+                f"intuition:{intuition_signal}",
+                f"consciousness:{consciousness}",
+],
             insight=insight,
         )
 
