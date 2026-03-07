@@ -338,6 +338,22 @@ def ask(
             )
 
         req_dict, cleaned_text, ctx_in = normalize_req(req, raw_text)
+
+        # VIP GATE CONTROL
+        if req_dict.get("gate_mode") == "divine":
+         row = db.execute(
+               text("SELECT vip FROM users WHERE id = :uid"),
+               {"uid": int(x_user_id)}
+        ).mappings().first()
+
+        user_is_vip = bool(row and row.get("vip"))
+
+        if not user_is_vip:
+         raise HTTPException(
+            status_code=402,
+            detail={"code": "VIP_REQUIRED", "message": "This gate requires Sanrı Elite."}
+        )
+
         domain = _safe_str(req_dict.get("domain") or "auto").strip() or "auto"
 
         module = REGISTRY.get(domain) or REGISTRY.get("auto")
