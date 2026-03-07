@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from app.services.consciousness_engine import detect_consciousness, build_consciousness_layer
+from app.services.sanri_consciousness_engine import detect_consciousness, build_consciousness_layer
 
 from openai import OpenAI
 
