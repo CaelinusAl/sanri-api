@@ -19,6 +19,7 @@ from app.db import get_db
 from app.services.usage import check_and_increment
 from app.services.memory import get_user_memory # DB memory read
 from app.services.insight_engine import build_user_insight
+from app.services.memory_state_engine import build_memory_state
 
 # registry + prompt version
 from app.modules.registry import REGISTRY # type: ignore
@@ -34,6 +35,7 @@ try:
     from app.models.memory import Memory # type: ignore
 except Exception:
     Memory = None
+    
 
 
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
@@ -448,9 +450,14 @@ def ask(
         
         # Sanrı kullanıcı içgörüsü oluştur
         try:
-            insight = build_user_insight(db, int(x_user_id))
+           build_user_insight(db, int(x_user_id))
         except Exception:
-            insight = None
+         pass
+            
+        try:
+            build_memory_state(db, int(x_user_id))
+        except Exception:
+         pass
 
         # session memory
         remember(session_id, "user", cleaned_text)
