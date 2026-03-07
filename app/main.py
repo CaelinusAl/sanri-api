@@ -34,6 +34,7 @@ from app.routes.memory import router as memory_router
 from app.routes.activity import router as activity_router
 from app.services.feed_scheduler import start_scheduler
 from app.routes.memory_state import router as memory_state_router
+from app.routes.device import router as device_router
 
 
 
@@ -133,3 +134,4 @@ app.include_router(profile_router)
 app.include_router(memory_router)
 app.include_router(activity_router)
 app.include_router(memory_state_router)
+app.include_router(device_router)

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from app.services.consciousness_engine import detect_consciousness, build_consciousness_layer
 
 from openai import OpenAI
 
@@ -161,7 +162,7 @@ class AskResponse(BaseModel):
 
     sections: List[dict] = []
 
-    tags: List[str] = []
+    tags=list((out or {}).get("tags") or []) + [f"intuition:{intuition_signal}", f"consciousness:{consciousness}"],
 
     insight: Optional[dict] = None
 
@@ -260,6 +261,13 @@ def ask(
             if isinstance(user_memory, list):
                 memory_summary = build_memory_summary(user_memory)
                 memory_evolution = evolve_memory(user_memory)
+                
+                consciousness = detect_consciousness(user_memory)
+
+                consciousness_layer = build_consciousness_layer(consciousness)
+
+                ctx["consciousness"] = consciousness
+                ctx["consciousness_layer"] = consciousness_layer
         except Exception:
             memory_summary = {}
             memory_evolution = {}
@@ -276,7 +284,13 @@ def ask(
             insight = build_user_insight(db, int(x_user_id))
         except Exception:
             pass
+        
+        
+        intuition_signal = detect_intuition_signal(user_memory, text_input)
+        intuition_layer = build_intuition_layer(intuition_signal)
 
+        ctx["intuition_signal"] = intuition_signal
+        ctx["intuition_layer"] = intuition_layer
         # ------------------------------------------------
         # SYSTEM PROMPT
         # ------------------------------------------------
@@ -288,6 +302,8 @@ def ask(
         
         system_prompt = system_prompt + "\n\nSANRI SOUL:\n" + soul_layer
         system_prompt = system_prompt + "\n\nSANRI PERSONALITY:\n" + personality_layer
+        system_prompt = system_prompt + "\n\nSANRI CONSCIOUSNESS:\n" + consciousness_layer
+        system_prompt = system_prompt + "\n\nSANRI INTUITION:\n" + intuition_layer
 
         
         
