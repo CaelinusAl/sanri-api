@@ -23,6 +23,7 @@ from app.services.insight_engine import build_user_insight
 from app.services.memory_state_engine import build_memory_state
 from app.services.memory_engine import build_memory_summary
 from app.services.personality_engine import build_personality
+from app.services.memory_evolution_engine import evolve_memory
 
 from app.modules.registry import REGISTRY
 from app.prompts.system_base import SANRI_PROMPT_VERSION
@@ -169,22 +170,21 @@ class AskResponse(BaseModel):
 # ------------------------------------------------
 
 
+
+
 @router.post("/ask", response_model=AskResponse)
 def ask(
     req: AskRequest,
     x_user_id: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-
     try:
-
         gc_sessions()
 
         if not x_user_id:
             raise HTTPException(400, "X-User-Id missing")
 
         session_id = req.session_id or "default"
-
         text_input = req.text()
 
         if not text_input:
@@ -208,9 +208,7 @@ def ask(
         # ------------------------------------------------
         # VIP Gate
         # ------------------------------------------------
-
         if req.gate_mode == "divine":
-
             row = db.execute(
                 text("SELECT vip FROM users WHERE id = :uid"),
                 {"uid": int(x_user_id)},
@@ -226,11 +224,9 @@ def ask(
                 )
 
         domain = req.domain or "auto"
-
         module = REGISTRY.get(domain) or REGISTRY.get("auto")
 
         if module is None:
-
             answer = "Buradayım."
 
             remember(session_id, "user", text_input)
@@ -247,42 +243,52 @@ def ask(
 
         try:
             ctx = module.preprocess(text_input, {})
-        except:
+        except Exception:
             ctx = {}
 
         # ------------------------------------------------
-        # MEMORY SUMMARY
+        # MEMORY SUMMARY + MEMORY EVOLUTION
         # ------------------------------------------------
-
         memory_summary = {}
+        memory_evolution = {}
+        user_memory = []
 
         try:
-
             user_memory = get_user_memory(db, int(x_user_id))
 
             if isinstance(user_memory, list):
-
                 memory_summary = build_memory_summary(user_memory)
-
-        except:
-            pass
+                memory_evolution = evolve_memory(user_memory)
+        except Exception:
+            memory_summary = {}
+            memory_evolution = {}
+            user_memory = []
 
         ctx["memory_summary"] = memory_summary
+        ctx["memory_evolution"] = memory_evolution
 
         # ------------------------------------------------
+        # USER INSIGHT
+        # ------------------------------------------------
+        insight = None
+        try:
+            insight = build_user_insight(db, int(x_user_id))
+        except Exception:
+            pass
 
+        # ------------------------------------------------
+        # SYSTEM PROMPT
+        # ------------------------------------------------
         system_prompt = module.build_system({}, ctx)
-        
-        personality_layer = build_personality(memory_summary, insight)
+        system_prompt = system_prompt + "\n\nSANRI MEMORY EVOLUTION:\n" + str(memory_evolution)
 
+        personality_layer = build_personality(memory_summary, insight)
         system_prompt = system_prompt + "\n\nSANRI PERSONALITY:\n" + personality_layer
 
         user_payload = module.build_user({}, ctx)
 
         messages = [{"role": "system", "content": system_prompt}]
-
         messages.extend(history_messages(session_id))
-
         messages.append(
             {
                 "role": "user",
@@ -300,57 +306,33 @@ def ask(
         )
 
         reply = completion.choices[0].message.content
-
         answer = reply.strip()
 
         remember(session_id, "user", text_input)
         remember(session_id, "assistant", answer)
 
-        # ------------------------------------------------
-        # USER INSIGHT
-        # ------------------------------------------------
-
-        insight = None
-
         try:
-
-            insight = build_user_insight(db, int(x_user_id))
-
-        except:
-            pass
-
-        try:
-
             build_memory_state(db, int(x_user_id))
-
-        except:
+        except Exception:
             pass
 
-        # ------------------------------------------------
-        # SAVE MEMORY
-        # ------------------------------------------------
-
         try:
-
             if Memory:
-
                 m = Memory(
                     id=str(uuid.uuid4()),
                     user_id=int(x_user_id),
                     type=domain,
-                    context={},
+                    context={
+                        "memory_summary": memory_summary,
+                        "memory_evolution": memory_evolution,
+                    },
                     input_text=text_input,
                     output_text=answer,
                 )
-
                 db.add(m)
-
                 db.commit()
-
-        except:
+        except Exception:
             db.rollback()
-
-        # ------------------------------------------------
 
         return AskResponse(
             response=answer,
@@ -365,7 +347,6 @@ def ask(
         )
 
     except Exception as e:
-
         raise HTTPException(
             500,
             detail={
