@@ -22,6 +22,7 @@ from app.services.memory import get_user_memory
 from app.services.insight_engine import build_user_insight
 from app.services.memory_state_engine import build_memory_state
 from app.services.memory_engine import build_memory_summary
+from app.services.personality_engine import build_personality
 
 from app.modules.registry import REGISTRY
 from app.prompts.system_base import SANRI_PROMPT_VERSION
@@ -271,6 +272,10 @@ def ask(
         # ------------------------------------------------
 
         system_prompt = module.build_system({}, ctx)
+        
+        personality_layer = build_personality(memory_summary, insight)
+
+        system_prompt = system_prompt + "\n\nSANRI PERSONALITY:\n" + personality_layer
 
         user_payload = module.build_user({}, ctx)
 
