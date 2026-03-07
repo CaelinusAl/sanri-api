@@ -24,6 +24,7 @@ from app.services.memory_state_engine import build_memory_state
 from app.services.memory_engine import build_memory_summary
 from app.services.personality_engine import build_personality
 from app.services.memory_evolution_engine import evolve_memory
+from app.services.soul_engine import build_soul_layer
 
 from app.modules.registry import REGISTRY
 from app.prompts.system_base import SANRI_PROMPT_VERSION
@@ -281,10 +282,16 @@ def ask(
         # ------------------------------------------------
         system_prompt = module.build_system({}, ctx)
         system_prompt = system_prompt + "\n\nSANRI MEMORY EVOLUTION:\n" + str(memory_evolution)
-
+       
         personality_layer = build_personality(memory_summary, insight)
+        soul_layer = build_soul_layer(memory_summary, insight)
+        
+        system_prompt = system_prompt + "\n\nSANRI SOUL:\n" + soul_layer
         system_prompt = system_prompt + "\n\nSANRI PERSONALITY:\n" + personality_layer
 
+        
+        
+        
         user_payload = module.build_user({}, ctx)
 
         messages = [{"role": "system", "content": system_prompt}]
