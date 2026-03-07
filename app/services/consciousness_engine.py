@@ -63,3 +63,19 @@ def generate_daily_feed(lang="tr"):
         "question": question["tr"] if lang == "tr" else question["en"],
         "ritual": ritual["tr"] if lang == "tr" else ritual["en"]
     }
+    
+def detect_consciousness(memory):
+    """
+    Basit bilinç seviyesi tahmini
+    """
+    if not memory:
+        return "seeker"
+
+    score = len(memory)
+
+    if score > 15:
+        return "awakening"
+    elif score > 6:
+        return "aware"
+    else:
+        return "seeker"
