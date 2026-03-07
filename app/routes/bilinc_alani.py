@@ -448,9 +448,11 @@ def ask(
 
         answer = pick_answer(reply_json, out, lang)
         
-        # Sanrı kullanıcı içgörüsü oluştur
+        # Sanrı kullanıcı içgörüsü oluşturur
+        insight = None
         try:
-           build_user_insight(db, int(x_user_id))
+          if x_user_id:
+           insight = build_user_insight(db, int(x_user_id))
         except Exception:
          pass
             
