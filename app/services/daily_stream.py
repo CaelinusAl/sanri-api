@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.models.content import DailyStream, WeeklySymbol
-from app.routes.bilinc_alani import get_client, ensure_json_obj # aynı client + parser
+from app.routes.bilinc_alani import get_client
 import os
 
 def _week_key(d: date) -> str:
