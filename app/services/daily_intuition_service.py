@@ -1,47 +1,38 @@
+from datetime import datetime
 import random
-from sqlalchemy.orm import Session
 
-from app.services.memory import get_user_memory
-from app.services.intuition_engine import detect_intuition_signal
 from app.services.consciousness_engine import detect_consciousness
 
 
-def build_daily_message(signal: str, consciousness: str):
-
-    if signal == "fear":
-        return "Bugün zihnin seni korumaya çalışıyor. Ama bazen güvenmek gerekir."
-
-    if signal == "uncertainty":
-        return "Bugün cevap arama. Sadece gözlemle."
-
-    if signal == "longing":
-        return "Bugün kalbin sana bir şey hatırlatmak istiyor."
-
-    if signal == "readiness":
-        return "Bugün küçük bir adım büyük bir kapı açabilir."
-
-    if consciousness == "awakening":
-        return "Bugün gördüğün işaretlere dikkat et."
-
-    return random.choice([
-        "Bugün bir şey sana anlamını gösterebilir.",
-        "Bugün sezgine güven.",
-        "Bugün bir soru seni ilerletebilir."
-    ])
+INTUITIONS = {
+    "seeker": [
+        "Bugün sana bir soru eşlik edecek: Gerçekten ne hissediyorsun?",
+        "Bugün bir sembol dikkatini çekebilir. Onu küçümseme.",
+        "Bugün yavaşla. Bazı cevaplar hızda değil sessizlikte ortaya çıkar."
+    ],
+    "aware": [
+        "Bugün bir farkındalık yaşayabilirsin. Direnme, gözlemle.",
+        "Bugün biri sana aynalık yapabilir. Tepki yerine merak seç.",
+        "Bugün gördüğün küçük bir detay sana büyük bir şey anlatabilir."
+    ],
+    "awakening": [
+        "Bugün sezgin güçlü olacak. İlk hissini ciddiye al.",
+        "Bugün bir senkronisite yaşayabilirsin. Onu not et.",
+        "Bugün evren sana küçük bir işaret bırakabilir."
+    ]
+}
 
 
-def generate_daily_notification(db: Session, user_id: int):
+def generate_daily_notification(memory):
 
-    memory = get_user_memory(db, user_id)
+    level = detect_consciousness(memory)
 
-    signal = detect_intuition_signal(memory)
+    options = INTUITIONS.get(level, INTUITIONS["seeker"])
 
-    consciousness = detect_consciousness(memory)
-
-    message = build_daily_message(signal, consciousness)
+    message = random.choice(options)
 
     return {
-        "signal": signal,
-        "consciousness": consciousness,
-        "message": message
+        "level": level,
+        "message": message,
+        "date": str(datetime.utcnow())
     }
