@@ -118,7 +118,8 @@ def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
         text(
             """
             INSERT INTO system_feed_items
-            (
+            (   
+                id,
                 kind,
                 title,
                 subtitle,
@@ -129,6 +130,7 @@ def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
             )
             VALUES
             (
+                DEFAULT,
                 :kind,
                 :title,
                 :subtitle,
