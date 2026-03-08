@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.db import get_db
 from app.services.system_feed import get_latest_feed, generate_and_store_feed
-
 
 router = APIRouter(prefix="/content", tags=["content"])
 
@@ -71,7 +71,6 @@ def system_feed_generate_get(
             }
         )
 
-
 # ----------------------------------------------------
 # GENERATE (POST for internal automation)
 # ----------------------------------------------------
@@ -98,3 +97,24 @@ def system_feed_generate_post(
                 "error": str(e)
             }
         )
+
+
+# ----------------------------------------------------
+# DB CHECK (DEBUG)
+# ----------------------------------------------------
+
+@router.get("/system-feed/db-check")
+def system_feed_db_check(
+    db: Session = Depends(get_db)
+):
+    row = db.execute(
+        text("SELECT current_database() AS db, current_user AS usr, now() AS now")
+    ).mappings().first()
+
+    return {
+        "database": row.get("db"),
+        "user": row.get("usr"),
+        "now": str(row.get("now")),
+    }
+
+
