@@ -115,14 +115,12 @@ def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
     lang = _normalize_lang(lang)
 
     item = _generate_item(lang)
-    
 
     db.execute(
         text(
             """
             INSERT INTO system_feed_items
             (
-                created_at,
                 kind,
                 title,
                 subtitle,
@@ -133,7 +131,6 @@ def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
             )
             VALUES
             (
-                :created_at,
                 :kind,
                 :title,
                 :subtitle,
@@ -158,7 +155,6 @@ def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
     db.commit()
 
     return get_latest_feed(db, lang)
-
 
 # ----------------------------------------------------
 # GENERATE ITEM
