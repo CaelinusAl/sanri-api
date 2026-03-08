@@ -40,6 +40,7 @@ from app.routes.dream import router as dream_router
 
 
 
+
 def _split_origins(v: str) -> list[str]:
     if not v:
         return []
