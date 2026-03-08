@@ -83,18 +83,25 @@ Konuşma:
     try:
 
         resp = client.chat.completions.create(
-          model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        messages=[
-        {"role": "system", "content": "Analyze the user's consciousness pattern."},
-        {"role": "user", "content": prompt},
-       ],
-        temperature=0.5,
-        max_tokens=300
-)
+            model=MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Analyze the user's consciousness pattern."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                },
+            ],
+            temperature=0.5,
+            max_tokens=300,
+        )
 
         txt = resp.choices[0].message.content or ""
 
         return _safe_json(txt)
 
-    except Exception:
+    except Exception as e:
+        print("INSIGHT ERROR:", e)
         return {}
