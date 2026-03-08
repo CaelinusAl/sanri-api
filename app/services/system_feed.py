@@ -2,7 +2,6 @@
 
 import os
 import json
-from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 from sqlalchemy import text
@@ -14,10 +13,6 @@ from openai import OpenAI
 # ----------------------------------------------------
 # helpers
 # ----------------------------------------------------
-
-def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
 
 def _normalize_lang(lang: str) -> str:
     lang = (lang or "tr").strip().lower()
@@ -90,13 +85,17 @@ def get_latest_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
     else:
         tags = str(tags)
 
+    created_at = row.get("created_at")
+    if hasattr(created_at, "isoformat"):
+        created_at = created_at.isoformat()
+    elif created_at is None:
+        created_at = None
+    else:
+        created_at = str(created_at)
+
     return {
         "id": row.get("id"),
-        "created_at": (
-            row.get("created_at").isoformat()
-            if row.get("created_at")
-            else None
-        ),
+        "created_at": created_at,
         "kind": row.get("kind") or "system",
         "title": row.get("title") or "",
         "subtitle": row.get("subtitle") or "",
@@ -113,7 +112,6 @@ def get_latest_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
 
 def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
     lang = _normalize_lang(lang)
-
     item = _generate_item(lang)
 
     db.execute(
@@ -153,8 +151,8 @@ def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
     )
 
     db.commit()
-
     return get_latest_feed(db, lang)
+
 
 # ----------------------------------------------------
 # GENERATE ITEM
