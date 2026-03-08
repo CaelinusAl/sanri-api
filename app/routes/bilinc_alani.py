@@ -158,6 +158,7 @@ class AskResponse(BaseModel):
     title: str = "Sanrı"
     sections: List[dict] = []
     tags: List[str] = []
+    insight: Optional[dict] = None
 
 # ------------------------------------------------
 # Endpoint
@@ -320,8 +321,8 @@ def ask(
             max_tokens=MAX_TOKENS,
         )
 
-        reply = completion.choices[0].message.content
-        answer = reply.strip()
+        reply = completion.choices[0].message.content or ""
+        answer = reply.strip() or "Buradayım."
 
         remember(session_id, "user", text_input)
         remember(session_id, "assistant", answer)
@@ -350,19 +351,19 @@ def ask(
             db.rollback()
 
         return AskResponse(
-            response=answer,
-            answer=answer,
-            session_id=session_id,
-            prompt_version=SANRI_PROMPT_VERSION,
-            module=domain,
-            title="Sanrı",
-            sections=[],
-            tags=list((out or {}).get("tags") or []) + [
-                f"intuition:{intuition_signal}",
-                f"consciousness:{consciousness}",
-],
-            insight=insight,
-        )
+    response=answer,
+    answer=answer,
+    session_id=session_id,
+    prompt_version=SANRI_PROMPT_VERSION,
+    module=domain,
+    title="Sanrı",
+    sections=[],
+    tags=[
+        f"intuition:{intuition_signal}",
+        f"consciousness:{consciousness}",
+    ],
+    insight=insight if isinstance(insight, dict) else None,
+)
 
     except Exception as e:
         raise HTTPException(
