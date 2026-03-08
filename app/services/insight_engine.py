@@ -83,14 +83,14 @@ Konuşma:
     try:
 
         resp = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": "You generate user insight."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.4,
-            max_tokens=200,
-        )
+          model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        messages=[
+        {"role": "system", "content": "Analyze the user's consciousness pattern."},
+        {"role": "user", "content": prompt},
+       ],
+        temperature=0.5,
+        max_tokens=300
+)
 
         txt = resp.choices[0].message.content or ""
 
