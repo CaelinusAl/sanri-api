@@ -49,7 +49,7 @@ def ask(req: AskRequest, x_user_id: str = Header(None)):
             }
         ],
         temperature=0.7,
-        max_tokens=600,
+        max_tokens=360,
     )
 
     text = completion.choices[0].message.content or ""
