@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from openai import OpenAI
 import os
 
+from app.services.ritual_feed import generate_ritual
+
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -33,7 +35,15 @@ def ask(req: AskRequest, x_user_id: str = Header(None)):
 
     if not x_user_id:
         raise HTTPException(400, "X-User-Id missing")
+    if req.message.lower().startswith("ritual:"):
+     ritual = generate_ritual(None)
 
+    return {
+        "answer": ritual.get("title", "Ritüel"),
+        "response": ritual.get("body_tr", ""),
+        "session_id": req.session_id,
+        "prompt_version": "ritual_v1"
+    }
     client = get_client()
 
     completion = client.chat.completions.create(
