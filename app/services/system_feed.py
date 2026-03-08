@@ -115,7 +115,7 @@ def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
     lang = _normalize_lang(lang)
 
     item = _generate_item(lang)
-    created_at = _now_utc()
+    
 
     db.execute(
         text(
@@ -145,7 +145,6 @@ def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
             """
         ),
         {
-            "created_at": created_at,
             "kind": item.get("kind") or "system",
             "title": item.get("title") or "",
             "subtitle": item.get("subtitle") or "",
