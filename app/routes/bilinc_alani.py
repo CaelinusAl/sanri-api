@@ -162,8 +162,7 @@ def ask(
                 prompt_version=SANRI_PROMPT_VERSION,
             )
 
-        usage = check_and_increment(db, x_user_id)
-
+        usage = {"ok": True}
         if not usage.get("ok", True):
 
             raise HTTPException(
@@ -285,7 +284,7 @@ def ask(
         remember(session_id, "assistant", answer)
 
         try:
-            build_memory_state(db, int(x_user_id))
+            pass
         except Exception:
             pass
         return AskResponse(
