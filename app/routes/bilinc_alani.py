@@ -3,8 +3,6 @@ from pydantic import BaseModel
 from openai import OpenAI
 import os
 
-from app.services.ritual_feed import generate_ritual
-
 router = APIRouter(prefix="/bilinc-alani", tags=["bilinc-alani"])
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -26,24 +24,35 @@ class AskResponse(BaseModel):
 def get_client():
     key = os.getenv("OPENAI_API_KEY")
     if not key:
-        raise HTTPException(500, "OPENAI_KEY_MISSING")
+        raise HTTPException(status_code=500, detail="OPENAI_KEY_MISSING")
     return OpenAI(api_key=key)
 
 
 @router.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest, x_user_id: str = Header(None)):
-
     if not x_user_id:
-        raise HTTPException(400, "X-User-Id missing")
-    if req.message.lower().startswith("ritual:"):
-     ritual = generate_ritual(None)
+        raise HTTPException(status_code=400, detail="X-User-Id missing")
 
-    return {
-        "answer": ritual.get("title", "Ritüel"),
-        "response": ritual.get("body_tr", ""),
-        "session_id": req.session_id,
-        "prompt_version": "ritual_v1"
-    }
+    message = (req.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="EMPTY_MESSAGE")
+
+    # Ritüel modu
+    if message.lower().startswith("ritual:"):
+        clean = message.replace("ritual:", "", 1).strip()
+
+        return {
+            "answer": "Sanrı Ritüeli",
+            "response": (
+                f"Gözlerini kapat.\n"
+                f"İçinden şu duyguyu çağır: {clean}\n"
+                f"Bu hissi yargılamadan izle.\n"
+                f"Son nefeste bırak."
+            ),
+            "session_id": req.session_id,
+            "prompt_version": "ritual_v1",
+        }
+
     client = get_client()
 
     completion = client.chat.completions.create(
@@ -51,22 +60,20 @@ def ask(req: AskRequest, x_user_id: str = Header(None)):
         messages=[
             {
                 "role": "system",
-                "content": "You are Sanrı. You reflect meaning, not answers."
+                "content": "You are Sanrı. You reflect meaning, not answers.",
             },
             {
                 "role": "user",
-                "content": req.message
-            }
+                "content": message,
+            },
         ],
-        temperature=0.7,
-        max_tokens=360,
     )
 
-    text = completion.choices[0].message.content or ""
+    text = completion.choices[0].message.content or "Sanrı seni duydu."
 
-    return AskResponse(
-        answer=text,
-        response=text,
-        session_id=req.session_id,
-        prompt_version="core"
-    )
+    return {
+        "answer": text,
+        "response": text,
+        "session_id": req.session_id,
+        "prompt_version": "default_v1",
+    }
