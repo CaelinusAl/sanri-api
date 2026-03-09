@@ -1,11 +1,10 @@
-# app/services/system_feed.py
-
 import os
 import json
 from typing import Optional, Dict, Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from openai import OpenAI
 
@@ -51,31 +50,47 @@ def _safe_json(x: Any) -> Dict[str, Any]:
 # GET LATEST FEED
 # ----------------------------------------------------
 
-def get_latest_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
+def get_latest_feed(db: Optional[Session], lang: str = "tr") -> Dict[str, Any]:
     lang = _normalize_lang(lang)
 
-    row = db.execute(
-        text(
-            """
-            SELECT
-                id,
-                created_at,
-                kind,
-                title,
-                subtitle,
-                body_tr,
-                body_en,
-                source_url,
-                tags
-            FROM system_feed_items
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-            """
-        )
-    ).mappings().first()
+    if db is None:
+        out = _stub_feed(lang)
+        out["warning"] = "DB_MISSING"
+        return out
+
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    created_at,
+                    kind,
+                    title,
+                    subtitle,
+                    body_tr,
+                    body_en,
+                    source_url,
+                    tags
+                FROM system_feed_items
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """
+            )
+        ).mappings().first()
+    except SQLAlchemyError:
+        out = _stub_feed(lang)
+        out["warning"] = "DB_READ_FAILED"
+        return out
+    except Exception:
+        out = _stub_feed(lang)
+        out["warning"] = "DB_READ_UNKNOWN_ERROR"
+        return out
 
     if not row:
-        return _stub_feed(lang)
+        out = _stub_feed(lang)
+        out["warning"] = "NO_ROWS"
+        return out
 
     tags = row.get("tags")
     if isinstance(tags, list):
@@ -110,49 +125,71 @@ def get_latest_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
 # GENERATE + STORE
 # ----------------------------------------------------
 
-def generate_and_store_feed(db: Session, lang: str = "tr") -> Dict[str, Any]:
+def generate_and_store_feed(db: Optional[Session], lang: str = "tr") -> Dict[str, Any]:
     lang = _normalize_lang(lang)
     item = _generate_item(lang)
 
-    db.execute(
-        text(
-            """
-            INSERT INTO system_feed_items
-            (   
-                id,
-                kind,
-                title,
-                subtitle,
-                body_tr,
-                body_en,
-                source_url,
-                tags
-            )
-            VALUES
-            (
-                DEFAULT,
-                :kind,
-                :title,
-                :subtitle,
-                :body_tr,
-                :body_en,
-                :source_url,
-                :tags
-            )
-            """
-        ),
-        {
-            "kind": item.get("kind") or "system",
-            "title": item.get("title") or "",
-            "subtitle": item.get("subtitle") or "",
-            "body_tr": item.get("body_tr") or "",
-            "body_en": item.get("body_en") or "",
-            "source_url": item.get("source_url") or "",
-            "tags": item.get("tags") or "",
-        },
-    )
+    if db is None:
+        out = dict(item)
+        out["warning"] = "DB_MISSING_NOT_STORED"
+        return out
 
-    db.commit()
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO system_feed_items
+                (
+                    id,
+                    kind,
+                    title,
+                    subtitle,
+                    body_tr,
+                    body_en,
+                    source_url,
+                    tags
+                )
+                VALUES
+                (
+                    DEFAULT,
+                    :kind,
+                    :title,
+                    :subtitle,
+                    :body_tr,
+                    :body_en,
+                    :source_url,
+                    :tags
+                )
+                """
+            ),
+            {
+                "kind": item.get("kind") or "system",
+                "title": item.get("title") or "",
+                "subtitle": item.get("subtitle") or "",
+                "body_tr": item.get("body_tr") or "",
+                "body_en": item.get("body_en") or "",
+                "source_url": item.get("source_url") or "",
+                "tags": item.get("tags") or "",
+            },
+        )
+        db.commit()
+    except SQLAlchemyError:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        out = dict(item)
+        out["warning"] = "DB_WRITE_FAILED_NOT_STORED"
+        return out
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        out = dict(item)
+        out["warning"] = "DB_WRITE_UNKNOWN_ERROR_NOT_STORED"
+        return out
+
     return get_latest_feed(db, lang)
 
 
@@ -165,7 +202,9 @@ def _generate_item(lang: str = "tr") -> Dict[str, Any]:
 
     client = _openai_client()
     if client is None:
-        return _stub_feed(lang)
+        out = _stub_feed(lang)
+        out["warning"] = "OPENAI_KEY_MISSING"
+        return out
 
     system = (
         "You generate a daily consciousness stream for an AI system feed. "
@@ -224,7 +263,9 @@ def _generate_item(lang: str = "tr") -> Dict[str, Any]:
         }
 
         if not out["title"] or (not out["body_tr"] and not out["body_en"]):
-            return _stub_feed(lang)
+            stub = _stub_feed(lang)
+            stub["warning"] = "MODEL_OUTPUT_INVALID"
+            return stub
 
         if lang == "tr" and not out["body_tr"]:
             out["body_tr"] = out["body_en"] or _stub_feed("tr")["body_tr"]
@@ -235,7 +276,9 @@ def _generate_item(lang: str = "tr") -> Dict[str, Any]:
         return out
 
     except Exception:
-        return _stub_feed(lang)
+        stub = _stub_feed(lang)
+        stub["warning"] = "OPENAI_GENERATION_FAILED"
+        return stub
 
 
 # ----------------------------------------------------
