@@ -38,7 +38,7 @@ from app.routes.device import router as device_router
 from app.routes.push import router as push_router
 from app.routes.dream import router as dream_router
 from app.routes import global_signal
-from app.routes.ritual_voice import router as ritual_voice_router
+#from app.routes.ritual_voice import router as ritual_voice_router
 
 
 
@@ -58,7 +58,8 @@ app = FastAPI()
 
 @app.on_event("startup")
 def start_background_jobs():
-    start_scheduler()
+    # start_scheduler()
+    pass
       
 @app.get("/")
 def root():
@@ -142,4 +143,4 @@ app.include_router(device_router)
 app.include_router(push_router)
 app.include_router(dream_router)
 app.include_router(global_signal.router)
-app.include_router(ritual_voice_router)
+# app.include_router(ritual_voice_router)
