@@ -9,14 +9,19 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # cihaz / local kimlik
-    external_id = Column(String, unique=True, index=True, nullable=False)
+    external_id = Column(String, unique=True, index=True, nullable=True)
+
+    # auth
+    email = Column(String, unique=True, index=True, nullable=True)
+    password_hash = Column(String, nullable=True)
 
     # profil
     name = Column(String, nullable=True)
     birth_date = Column(String, nullable=True)
 
-    # erişim rolü
+    # erişim rolü / plan
     role = Column(String, default="free", nullable=False)
+    plan = Column(String, default="free", nullable=False)
 
     # premium subscription
     is_premium = Column(Boolean, default=False, nullable=False)
@@ -28,8 +33,10 @@ class User(Base):
     # tek seferlik kilit açma
     matrix_role_unlocked = Column(Boolean, default=False, nullable=False)
 
-    # limit / usage destek alanları
+    # kullanım / aktivite
     last_matrix_deep_analysis = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
 
     # hesap silme akışı
     deletion_requested_at = Column(DateTime, nullable=True)
