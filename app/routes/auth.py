@@ -34,7 +34,7 @@ def _conn():
     if not DATABASE_URL:
         raise HTTPException(status_code=500, detail="DATABASE_URL missing")
     # SSL issue yaşarsan: psycopg2.connect(DATABASE_URL, sslmode="require")
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
 def _require_secret():
