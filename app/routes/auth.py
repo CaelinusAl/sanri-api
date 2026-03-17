@@ -128,45 +128,33 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 @router.post("/login")
 def login(payload: LoginIn, db: Session = Depends(get_db)):
     if not payload.email and not payload.phone:
-        raise HTTPException(
-            status_code=400,
-            detail="Email or phone is required"
-        )
+        raise HTTPException(status_code=400, detail="Email or phone required")
 
     user = None
 
     if payload.email:
         user = db.query(User).filter(User.email == payload.email).first()
-
-    if not user and payload.phone:
+    elif payload.phone:
         user = db.query(User).filter(User.phone == payload.phone).first()
 
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="User not found")
 
     if not user.password_hash:
-        raise HTTPException(status_code=401, detail="Password login not available")
+        raise HTTPException(status_code=500, detail="Password hash missing")
 
-    if not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    ok = verify_password(payload.password, user.password_hash)
+    if not ok:
+        raise HTTPException(status_code=401, detail="Wrong password")
 
-    access_token = create_access_token({
-        "user_id": user.id
-    })
+    token = create_access_token({"user_id": str(user.id)})
 
     return {
-        "token": access_token,
+        "token": token,
         "user": {
             "id": user.id,
             "email": user.email,
-            "phone": user.phone,
             "name": user.name,
-            "birth_date": user.birth_date,
-            "is_verified": user.is_verified,
-            "role": user.role,
-            "plan": user.plan,
-            "is_premium": user.is_premium,
-            "matrix_role_unlocked": user.matrix_role_unlocked,
         },
     }
 
