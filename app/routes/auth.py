@@ -127,38 +127,29 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 # --------------------------------------------------
 @router.post("/login")
 def login(payload: LoginIn, db: Session = Depends(get_db)):
-    if not payload.email and not payload.phone:
-        raise HTTPException(status_code=400, detail="Email or phone required")
-
-    user = None
-
-    if payload.email:
+    try:
         user = db.query(User).filter(User.email == payload.email).first()
-    elif payload.phone:
-        user = db.query(User).filter(User.phone == payload.phone).first()
 
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
 
-    if not user.password_hash:
-        raise HTTPException(status_code=500, detail="Password hash missing")
+        if not user.password_hash:
+            raise HTTPException(status_code=500, detail="Password hash missing")
 
-    ok = verify_password(payload.password, user.password_hash)
-    if not ok:
-        raise HTTPException(status_code=401, detail="Wrong password")
+        if not verify_password(payload.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Wrong password")
 
-    token = create_access_token({"user_id": str(user.id)})
+        token = create_access_token({"sub": str(user.id)})
 
-    return {
-        "token": token,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-        },
-    }
+        return {
+            "access_token": token,
+            "token_type": "bearer"
+        }
 
-
+    except Exception as e:
+        print("LOGIN ERROR:", str(e)) # 🔥 BU KRİTİK
+        raise HTTPException(status_code=500, detail=str(e))
+    
 # --------------------------------------------------
 # ME
 # --------------------------------------------------
