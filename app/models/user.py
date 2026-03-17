@@ -2,7 +2,6 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from app.db import Base
 
-
 class User(Base):
     __tablename__ = "users"
 
@@ -13,7 +12,9 @@ class User(Base):
 
     # auth
     email = Column(String, unique=True, index=True, nullable=True)
+    phone = Column(String, unique=True, index=True, nullable=True)
     password_hash = Column(String, nullable=True)
+    is_verified = Column(Boolean, default=False, nullable=False)
 
     # profil
     name = Column(String, nullable=True)
@@ -43,4 +44,3 @@ class User(Base):
     account_deleted_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -1,271 +1,194 @@
 # app/routes/auth.py
-import os
-import time
-import base64
-import hmac
-import hashlib
-import bcrypt
-import psycopg2
 
-from fastapi import APIRouter, Response, Request, HTTPException, Header
-from fastapi.responses import JSONResponse
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.models.user import User
+from app.services.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    decode_token,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-JWT_SECRET = os.getenv("JWT_SECRET") # Railway env'e mutlaka koy
 
-COOKIE_NAME = "sanri_token"
-COOKIE_MAX_AGE = 60 * 60 * 24 * 30 # 30 gün
+# --------------------------------------------------
+# SCHEMAS
+# --------------------------------------------------
+class RegisterIn(BaseModel):
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    password: str
+    name: Optional[str] = None
+    birth_date: Optional[str] = None
 
 
-class RegisterRequest(BaseModel):
-    email: EmailStr
+class LoginIn(BaseModel):
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
     password: str
 
 
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+# --------------------------------------------------
+# CURRENT USER
+# --------------------------------------------------
+def get_current_user(
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    token = authorization.replace("Bearer ", "").strip()
+    payload = decode_token(token)
+
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
 
 
-def _conn():
-    if not DATABASE_URL:
-        raise HTTPException(status_code=500, detail="DATABASE_URL missing")
-    # SSL issue yaşarsan: psycopg2.connect(DATABASE_URL, sslmode="require")
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+# --------------------------------------------------
+# REGISTER
+# --------------------------------------------------
+@router.post("/register")
+def register(payload: RegisterIn, db: Session = Depends(get_db)):
+    if not payload.email and not payload.phone:
+        raise HTTPException(
+            status_code=400,
+            detail="Email or phone is required"
+        )
 
+    existing_user = None
 
-def _require_secret():
-    if not JWT_SECRET:
-        raise HTTPException(status_code=500, detail="JWT_SECRET missing")
+    if payload.email:
+        existing_user = db.query(User).filter(User.email == payload.email).first()
 
+    if not existing_user and payload.phone:
+        existing_user = db.query(User).filter(User.phone == payload.phone).first()
 
-def _token_sign(payload: str) -> str:
-    _require_secret()
-    sig = hmac.new(JWT_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User already registered")
 
-
-def make_token(user_id: int) -> str:
-    ts = str(int(time.time()))
-    payload = f"{user_id}.{ts}"
-    sig = _token_sign(payload)
-    return f"{payload}.{sig}"
-
-
-def parse_token(token: str) -> int | None:
-    try:
-        if not token:
-            return None
-
-        parts = token.split(".")
-        if len(parts) != 3:
-            return None
-
-        uid, ts, sig = parts
-        payload = f"{uid}.{ts}"
-
-        # signature verify
-        if not hmac.compare_digest(_token_sign(payload), sig):
-            return None
-
-        # TTL (30 gün)
-        if int(time.time()) - int(ts) > COOKIE_MAX_AGE:
-            return None
-
-        return int(uid)
-    except Exception:
-        return None
-
-
-def _get_token_from_header_or_cookie(request: Request, authorization: str | None) -> str | None:
-    # 1) Authorization: Bearer <token>
-    if authorization and authorization.lower().startswith("bearer "):
-        val = authorization.split(" ", 1)[1].strip()
-        return val or None
-    # 2) Cookie
-    return request.cookies.get(COOKIE_NAME)
-
-
-def set_auth_cookie(resp: Response, token: str):
-    # Cross-site (Vercel -> api) cookie için:
-    resp.set_cookie(
-        key=COOKIE_NAME,
-        value=token,
-        max_age=COOKIE_MAX_AGE,
-        httponly=True,
-        secure=True, # HTTPS şart
-        samesite="none", # cross-site cookie
-        path="/",
+    user = User(
+        email=payload.email,
+        phone=payload.phone,
+        password_hash=hash_password(payload.password),
+        name=payload.name,
+        birth_date=payload.birth_date,
+        role="free",
+        plan="free",
+        is_verified=False,
+        is_premium=False,
+        matrix_role_unlocked=False,
     )
 
+    db.add(user)
+    db.commit()
+    db.refresh(user)
 
-def clear_auth_cookie(resp: Response):
-    resp.delete_cookie(COOKIE_NAME, path="/")
+    access_token = create_access_token({
+        "user_id": user.id
+    })
 
-
-@router.post("/email/register")
-def email_register(data: RegisterRequest):
-    _require_secret()
-
-    email = data.email.lower().strip()
-    password = data.password
-
-    if len(password) < 6:
-        raise HTTPException(status_code=400, detail="Password too short")
-
-    hashed_pw = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-    conn = _conn()
-    cur = conn.cursor()
-    try:
-        # email var mı?
-        cur.execute("SELECT id FROM users WHERE email = %s", (email,))
-        if cur.fetchone():
-            raise HTTPException(status_code=409, detail="Email already registered")
-
-        # create user
-        cur.execute(
-            "INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id",
-            (email, hashed_pw),
-        )
-        user_id = cur.fetchone()[0]
-
-        # created_at db default; ama last_seen/login varsa set edelim
-        try:
-            cur.execute(
-                "UPDATE users SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = %s",
-                (user_id,),
-            )
-        except Exception:
-            # kolon yoksa vs sorun çıkmasın
-            pass
-
-        conn.commit()
-
-        token = make_token(user_id)
-        resp = JSONResponse({"success": True, "user_id": user_id, "token": token})
-        set_auth_cookie(resp, token)
-        return resp
-
-    except HTTPException:
-        conn.rollback()
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"register failed: {type(e).__name__}: {str(e)}")
-    finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        conn.close()
-
-
-@router.post("/email/login")
-def email_login(data: LoginRequest):
-    _require_secret()
-
-    email = data.email.lower().strip()
-    password = data.password
-
-    conn = _conn()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT id, password_hash FROM users WHERE email = %s", (email,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-
-        user_id, password_hash = row
-        ok = bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
-        if not ok:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-
-        # ✅ girişte takip
-        try:
-            cur.execute(
-                "UPDATE users SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = %s",
-                (user_id,),
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-        token = make_token(user_id)
-        resp = JSONResponse({"success": True, "user_id": user_id, "token": token})
-        set_auth_cookie(resp, token)
-        return resp
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"login failed: {type(e).__name__}: {str(e)}")
-    finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        conn.close()
-
-
-@router.get("/me")
-def me(request: Request, authorization: str | None = Header(default=None)):
-    token = _get_token_from_header_or_cookie(request, authorization)
-    user_id = parse_token(token) if token else None
-    if not user_id:
-        return {"authenticated": False}
-
-    conn = _conn()
-    cur = conn.cursor()
-    try:
-        # ✅ her /me çağrısında last_seen_at güncelle
-        try:
-            cur.execute("UPDATE users SET last_seen_at = NOW() WHERE id = %s", (user_id,))
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-        cur.execute(
-            "SELECT email, is_premium, plan, created_at, last_login_at, last_seen_at FROM users WHERE id = %s",
-            (user_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            return {"authenticated": False}
-
-        email, is_premium, plan, created_at, last_login_at, last_seen_at = row
-        return {
-            "authenticated": True,
-            "user_id": user_id,
-            "email": email,
-            "is_premium": bool(is_premium) if is_premium is not None else False,
-            "plan": plan or "free",
-            "created_at": created_at,
-            "last_login_at": last_login_at,
-            "last_seen_at": last_seen_at,
-        }
-    finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
-        conn.close()
-
-
-@router.post("/logout")
-def logout(response: Response):
-    clear_auth_cookie(response)
-    return {"success": True}
-
-
-@router.get("/debug-auth")
-def debug_auth(request: Request, authorization: str | None = Header(default=None)):
-    token = _get_token_from_header_or_cookie(request, authorization)
     return {
-        "has_cookie": COOKIE_NAME in request.cookies,
-        "has_auth_header": bool(authorization),
-        "token_prefix": (token[:18] if token else None),
+        "token": access_token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "phone": user.phone,
+            "name": user.name,
+            "birth_date": user.birth_date,
+            "is_verified": user.is_verified,
+            "role": user.role,
+            "plan": user.plan,
+            "is_premium": user.is_premium,
+            "matrix_role_unlocked": user.matrix_role_unlocked,
+        },
+    }
+
+
+# --------------------------------------------------
+# LOGIN
+# --------------------------------------------------
+@router.post("/login")
+def login(payload: LoginIn, db: Session = Depends(get_db)):
+    if not payload.email and not payload.phone:
+        raise HTTPException(
+            status_code=400,
+            detail="Email or phone is required"
+        )
+
+    user = None
+
+    if payload.email:
+        user = db.query(User).filter(User.email == payload.email).first()
+
+    if not user and payload.phone:
+        user = db.query(User).filter(User.phone == payload.phone).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not user.password_hash:
+        raise HTTPException(status_code=401, detail="Password login not available")
+
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access_token = create_access_token({
+        "user_id": user.id
+    })
+
+    return {
+        "token": access_token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "phone": user.phone,
+            "name": user.name,
+            "birth_date": user.birth_date,
+            "is_verified": user.is_verified,
+            "role": user.role,
+            "plan": user.plan,
+            "is_premium": user.is_premium,
+            "matrix_role_unlocked": user.matrix_role_unlocked,
+        },
+    }
+
+
+# --------------------------------------------------
+# ME
+# --------------------------------------------------
+@router.get("/me")
+def me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "phone": current_user.phone,
+        "name": current_user.name,
+        "birth_date": current_user.birth_date,
+        "is_verified": current_user.is_verified,
+        "role": current_user.role,
+        "plan": current_user.plan,
+        "is_premium": current_user.is_premium,
+        "premium_until": current_user.premium_until.isoformat() if current_user.premium_until else None,
+        "premium_source": current_user.premium_source,
+        "matrix_role_unlocked": current_user.matrix_role_unlocked,
+        "last_login_at": current_user.last_login_at.isoformat() if current_user.last_login_at else None,
+        "last_seen_at": current_user.last_seen_at.isoformat() if current_user.last_seen_at else None,
     }
