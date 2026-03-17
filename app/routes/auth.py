@@ -5,19 +5,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.db import get_db
-from app.services.auth import (
-    hash_password,
-    verify_password,
-    create_access_token,
-    decode_token,
-)
+from app.services.auth import verify_password, hash_password, create_access_token, decode_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-# -----------------------------
-# SCHEMAS
-# -----------------------------
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str
@@ -28,9 +20,6 @@ class LoginIn(BaseModel):
     password: str
 
 
-# -----------------------------
-# GET CURRENT USER
-# -----------------------------
 def get_current_user(
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
@@ -45,8 +34,10 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token")
 
     user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
 
-    row = db.execute(
+    user = db.execute(
         text("""
             SELECT id, email
             FROM users
@@ -56,21 +47,18 @@ def get_current_user(
         {"uid": int(user_id)},
     ).mappings().first()
 
-    if not row:
+    if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    return dict(row)
+    return dict(user)
 
 
-# -----------------------------
-# REGISTER
-# -----------------------------
 @router.post("/register")
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
     existing = db.execute(
-        text("SELECT id FROM users WHERE email = :email"),
+        text("SELECT id FROM users WHERE email = :email LIMIT 1"),
         {"email": payload.email},
-    ).first()
+    ).mappings().first()
 
     if existing:
         raise HTTPException(status_code=400, detail="Email already exists")
@@ -83,25 +71,16 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
             VALUES (:email, :password_hash)
             RETURNING id, email
         """),
-        {
-            "email": payload.email,
-            "password_hash": password_hash,
-        },
+        {"email": payload.email, "password_hash": password_hash},
     ).mappings().first()
 
     db.commit()
 
     token = create_access_token({"sub": str(user["id"])})
 
-    return {
-        "token": token,
-        "user": user,
-    }
+    return {"token": token, "user": user}
 
 
-# -----------------------------
-# LOGIN
-# -----------------------------
 @router.post("/login")
 def login(payload: LoginIn, db: Session = Depends(get_db)):
     user = db.execute(
@@ -120,9 +99,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     if not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Wrong password")
 
-    token = create_access_token({
-        "sub": str(user["id"])
-    })
+    token = create_access_token({"sub": str(user["id"])})
 
     return {
         "token": token,
@@ -131,10 +108,8 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
             "email": user["email"],
         },
     }
-    
-# -----------------------------
-# ME
-# -----------------------------
+
+
 @router.get("/me")
 def me(user=Depends(get_current_user)):
     return user
