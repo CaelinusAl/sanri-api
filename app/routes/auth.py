@@ -200,7 +200,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Wrong password")
 
     token = create_access_token({
-    "sub": str(user.id)
+    "sub": str(row["id"])
 })
 
     return {
