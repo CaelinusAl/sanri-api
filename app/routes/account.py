@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.services.auth import decode_token
 
-print("ACCOUNT_PY_NEW_BUILD_001")
+
 
 router = APIRouter(prefix="/auth", tags=["account"])
 
