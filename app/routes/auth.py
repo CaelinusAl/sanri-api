@@ -120,7 +120,9 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     if not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Wrong password")
 
-    token = create_access_token({"sub": str(user["id"])})
+    token = create_access_token({
+    "user_id": str(row["id"])
+})
 
     return {
         "token": token,
