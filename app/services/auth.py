@@ -26,12 +26,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode.update({"exp": expire})
+
+    print("CREATE SECRET PREFIX =", SECRET_KEY[:8])
+    print("CREATE DATA =", to_encode)
+
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def decode_token(token: str):
     try:
+        print("DECODE SECRET PREFIX =", SECRET_KEY[:8])
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print("DECODE PAYLOAD =", payload)
         return payload
     except JWTError as e:
         print("JWT DECODE ERROR =", str(e))
