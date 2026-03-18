@@ -1,3 +1,5 @@
+
+
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, EmailStr
@@ -24,33 +26,24 @@ def get_current_user(
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
+    print("AUTH HEADER =", authorization)
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     token = authorization.replace("Bearer ", "").strip()
     payload = decode_token(token)
 
+    print("PAYLOAD =", payload)
+
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     user_id = payload.get("sub")
+    print("USER ID =", user_id)
+
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
-
-    user = db.execute(
-        text("""
-            SELECT id, email
-            FROM users
-            WHERE id = :uid
-            LIMIT 1
-        """),
-        {"uid": int(user_id)},
-    ).mappings().first()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-
-    return dict(user)
 
 
 @router.post("/register")
