@@ -26,3 +26,5 @@ openai==1.30.5
 
 # --- UTIL ---
 typing_extensions==4.12.2
+
+APScheduler==3.10.4
