@@ -18,12 +18,17 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 
 def hash_password(password: str) -> str:
+    password = password[:72]  # 🔥 FIX
     return pwd_context.hash(password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
-
+    try:
+        password = password[:72]  # 🔥 FIX
+        return pwd_context.verify(password, password_hash)
+    except Exception as e:
+        print("VERIFY ERROR:", e)
+        return False
 
 def _build_token(
     data: dict[str, Any],
