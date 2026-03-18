@@ -18,7 +18,9 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    safe_password = password[:72]   # 🔥 STRING truncate
+    print("PASSWORD DEBUG:", password)
+    safe_password = password[:72]
+    print("TRUNCATED:", safe_password)
     return pwd_context.verify(safe_password, password_hash)
 
 
