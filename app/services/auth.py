@@ -13,18 +13,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 
 def hash_password(password: str) -> str:
-    safe_password = str(password)[:72]
-    print("HASH_PASSWORD CALLED")
-    print("RAW LEN =", len(str(password)))
-    print("SAFE LEN =", len(safe_password))
+    safe_password = str(password)[:72]   # 🔥 kritik fix
     return pwd_context.hash(safe_password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    safe_password = str(password)[:72]
-    print("VERIFY_PASSWORD CALLED")
-    print("RAW LEN =", len(str(password)))
-    print("SAFE LEN =", len(safe_password))
+    safe_password = str(password)[:72]   # 🔥 kritik fix
     try:
         return pwd_context.verify(safe_password, password_hash)
     except Exception as e:
