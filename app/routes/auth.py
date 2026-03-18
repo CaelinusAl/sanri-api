@@ -1,6 +1,5 @@
 from typing import Optional
 from datetime import datetime
-
 import base64
 import io
 
@@ -98,6 +97,8 @@ def get_current_user(
 
 @router.post("/register")
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+
     existing = db.execute(
         text("""
             SELECT id
@@ -105,7 +106,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
             WHERE email = :email
             LIMIT 1
         """),
-        {"email": payload.email.lower().strip()},
+        {"email": email},
     ).mappings().first()
 
     if existing:
@@ -128,7 +129,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
             RETURNING id, email, two_fa_enabled, created_at
         """),
         {
-            "email": payload.email.lower().strip(),
+            "email": email,
             "password_hash": password_hash,
         },
     ).mappings().first()
@@ -154,6 +155,8 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 
 @router.post("/login")
 def login(payload: LoginIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+
     user = db.execute(
         text("""
             SELECT
@@ -165,7 +168,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
             WHERE email = :email
             LIMIT 1
         """),
-        {"email": payload.email.lower().strip()},
+        {"email": email},
     ).mappings().first()
 
     if not user:
@@ -207,6 +210,8 @@ def me(user=Depends(get_current_user)):
 
 @router.post("/2fa/setup")
 def setup_2fa(payload: Enable2FAIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+
     user = db.execute(
         text("""
             SELECT id, email
@@ -214,43 +219,48 @@ def setup_2fa(payload: Enable2FAIn, db: Session = Depends(get_db)):
             WHERE email = :email
             LIMIT 1
         """),
-        {"email": payload.email.lower().strip()},
+        {"email": email},
     ).mappings().first()
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    secret = pyotp.random_base32()
+    try:
+        secret = pyotp.random_base32()
 
-    db.execute(
-        text("""
-            UPDATE users
-            SET two_fa_secret = :secret,
-                two_fa_enabled = FALSE
-            WHERE id = :uid
-        """),
-        {
+        db.execute(
+            text("""
+                UPDATE users
+                SET two_fa_secret = :secret,
+                    two_fa_enabled = FALSE
+                WHERE id = :uid
+            """),
+            {
+                "secret": secret,
+                "uid": user["id"],
+            },
+        )
+        db.commit()
+
+        otp_uri = pyotp.TOTP(secret).provisioning_uri(
+            name=user["email"],
+            issuer_name="Sanri",
+        )
+
+        qr = qrcode.make(otp_uri)
+        buffer = io.BytesIO()
+        qr.save(buffer, format="PNG")
+        qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        return {
             "secret": secret,
-            "uid": user["id"],
-        },
-    )
-    db.commit()
+            "otp_uri": otp_uri,
+            "qr_base64": qr_base64,
+        }
 
-    otp_uri = pyotp.TOTP(secret).provisioning_uri(
-        name=user["email"],
-        issuer_name="Sanri",
-    )
-
-    qr = qrcode.make(otp_uri)
-    buffer = io.BytesIO()
-    qr.save(buffer, format="PNG")
-    qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-    return {
-        "secret": secret,
-        "otp_uri": otp_uri,
-        "qr_base64": qr_base64,
-    }
+    except Exception as e:
+        print("2FA SETUP ERROR =", str(e))
+        raise HTTPException(status_code=500, detail=f"2FA setup failed: {str(e)}")
 
 
 # =========================================================
@@ -259,6 +269,8 @@ def setup_2fa(payload: Enable2FAIn, db: Session = Depends(get_db)):
 
 @router.post("/2fa/verify-setup")
 def verify_2fa_setup(payload: Verify2FASetupIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+
     user = db.execute(
         text("""
             SELECT id, email, two_fa_secret
@@ -266,7 +278,7 @@ def verify_2fa_setup(payload: Verify2FASetupIn, db: Session = Depends(get_db)):
             WHERE email = :email
             LIMIT 1
         """),
-        {"email": payload.email.lower().strip()},
+        {"email": email},
     ).mappings().first()
 
     if not user:
@@ -307,6 +319,8 @@ def verify_2fa_setup(payload: Verify2FASetupIn, db: Session = Depends(get_db)):
 
 @router.post("/2fa/verify-login")
 def verify_2fa_login(payload: Verify2FALoginIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+
     user = db.execute(
         text("""
             SELECT
@@ -318,7 +332,7 @@ def verify_2fa_login(payload: Verify2FALoginIn, db: Session = Depends(get_db)):
             WHERE email = :email
             LIMIT 1
         """),
-        {"email": payload.email.lower().strip()},
+        {"email": email},
     ).mappings().first()
 
     if not user:
