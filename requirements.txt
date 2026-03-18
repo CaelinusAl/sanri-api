@@ -11,3 +11,4 @@ qrcode[pil]
 pillow
 
 python-dotenv
+openai
