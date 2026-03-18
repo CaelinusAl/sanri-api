@@ -1,14 +1,28 @@
-fastapi
-uvicorn
-sqlalchemy
-psycopg2-binary
+# --- CORE API ---
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
 
-passlib[bcrypt]
-python-jose
+# --- DATABASE ---
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
 
-pyotp
-qrcode[pil]
-pillow
+# --- AUTH & SECURITY ---
+passlib[bcrypt]==1.7.4
+python-jose==3.3.0
 
-python-dotenv
-openai
+# --- 2FA ---
+pyotp==2.9.0
+qrcode[pil]==8.2
+pillow==10.4.0
+
+# --- ENV ---
+python-dotenv==1.0.1
+
+# --- VALIDATION ---
+email-validator==2.2.0
+
+# --- AI (senin bilinç alanı için) ---
+openai==1.30.5
+
+# --- UTIL ---
+typing_extensions==4.12.2
