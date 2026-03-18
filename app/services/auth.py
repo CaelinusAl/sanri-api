@@ -5,7 +5,7 @@ import os
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 SECRET_KEY = os.getenv("JWT_SECRET", "SUPER_SECRET_CHANGE_THIS")
 ALGORITHM = "HS256"
