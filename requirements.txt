@@ -1,22 +1,13 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
 
-sqlalchemy==2.0.32
-psycopg2-binary==2.9.9
+passlib[bcrypt]
+python-jose
 
-python-jose==3.3.0
-passlib[bcrypt]==1.7.4
+pyotp
+qrcode[pil]
+pillow
 
-pydantic==2.9.2
-email-validator==2.2.0
-
-python-multipart==0.0.9
-
-pyotp==2.9.0
-qrcode[pil]==8.2
-pillow==12.1.1
-
-openai==1.51.2
-
-APScheduler==3.11.2
-tzlocal==5.3.1
+python-dotenv
