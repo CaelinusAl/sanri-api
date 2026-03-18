@@ -18,11 +18,10 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    print("PASSWORD DEBUG:", password)
     safe_password = password[:72]
-    print("TRUNCATED:", safe_password)
     return pwd_context.verify(safe_password, password_hash)
 
+print("VERIFY SAFE:", safe_password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
