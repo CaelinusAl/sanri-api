@@ -13,15 +13,24 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 
 def hash_password(password: str) -> str:
-    safe_password = password[:72]   # 🔥 STRING truncate
+    safe_password = str(password)[:72]
+    print("HASH_PASSWORD CALLED")
+    print("RAW LEN =", len(str(password)))
+    print("SAFE LEN =", len(safe_password))
     return pwd_context.hash(safe_password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    safe_password = password[:72]
-    return pwd_context.verify(safe_password, password_hash)
+    safe_password = str(password)[:72]
+    print("VERIFY_PASSWORD CALLED")
+    print("RAW LEN =", len(str(password)))
+    print("SAFE LEN =", len(safe_password))
+    try:
+        return pwd_context.verify(safe_password, password_hash)
+    except Exception as e:
+        print("VERIFY ERROR =", str(e))
+        return False
 
-print("VERIFY SAFE:", safe_password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -29,13 +38,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode.update({"exp": expire})
-
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def decode_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         return None
