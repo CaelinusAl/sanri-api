@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
-
+from typing import Optional
 import os
 
 from jose import jwt, JWTError
@@ -8,80 +7,34 @@ from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SECRET_KEY = os.getenv("JWT_SECRET")
-if not SECRET_KEY:
-    raise RuntimeError("JWT_SECRET missing in environment variables")
-
+SECRET_KEY = os.getenv("JWT_SECRET", "SUPER_SECRET_CHANGE_THIS")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
-REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 
 def hash_password(password: str) -> str:
-    password = password.encode("utf-8")[:72]  # 💥 KRİTİK FIX
-    return pwd_context.hash(password)
+    safe_password = password.encode("utf-8")[:72] # 🔥 FIX
+    return pwd_context.hash(safe_password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    password = password.encode("utf-8")[:72]
-    return pwd_context.verify(password, password_hash)
+    safe_password = password.encode("utf-8")[:72] # 🔥 FIX
+    return pwd_context.verify(safe_password, password_hash)
 
-def _build_token(
-    data: dict[str, Any],
-    expires_delta: timedelta,
-    token_type: str,
-) -> str:
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + expires_delta
-    to_encode.update({
-        "exp": expire,
-        "type": token_type,
-    })
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    to_encode.update({"exp": expire})
+
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_access_token(data: dict[str, Any]) -> str:
-    return _build_token(
-        data=data,
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
-        token_type="access",
-    )
-
-
-def create_refresh_token(data: dict[str, Any]) -> str:
-    return _build_token(
-        data=data,
-        expires_delta=timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
-        token_type="refresh",
-    )
-
-
-def decode_token(token: str) -> Optional[dict[str, Any]]:
+def decode_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
         return None
-
-
-def decode_token_or_raise(token: str) -> dict[str, Any]:
-    payload = decode_token(token)
-    if not payload:
-        raise ValueError("Invalid token")
-    return payload
-
-
-def get_token_subject(token: str) -> Optional[str]:
-    payload = decode_token(token)
-    if not payload:
-        return None
-    sub = payload.get("sub")
-    return str(sub) if sub is not None else None
-
-
-def is_refresh_token(payload: dict[str, Any]) -> bool:
-    return payload.get("type") == "refresh"
-
-
-def is_access_token(payload: dict[str, Any]) -> bool:
-    return payload.get("type") == "access"
