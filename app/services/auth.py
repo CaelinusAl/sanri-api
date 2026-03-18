@@ -13,12 +13,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 
 def hash_password(password: str) -> str:
-    safe_password = password.encode("utf-8")[:72] # 🔥 FIX
+    safe_password = password[:72]   # 🔥 STRING truncate
     return pwd_context.hash(safe_password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    safe_password = password.encode("utf-8")[:72] # 🔥 FIX
+    safe_password = password[:72]   # 🔥 STRING truncate
     return pwd_context.verify(safe_password, password_hash)
 
 
