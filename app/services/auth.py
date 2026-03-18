@@ -33,5 +33,6 @@ def decode_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
-    except JWTError:
+    except JWTError as e:
+        print("JWT DECODE ERROR =", str(e))
         return None
