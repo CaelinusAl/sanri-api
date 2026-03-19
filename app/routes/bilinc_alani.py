@@ -1,5 +1,5 @@
 from typing import List, Optional
-
+import json
 import os
 
 from fastapi import APIRouter, Header, HTTPException, Depends
@@ -43,6 +43,41 @@ def get_client() -> OpenAI:
     return OpenAI(api_key=key)
 
 
+def analyze_user_signal(text_value: str) -> dict:
+    t = (text_value or "").lower()
+
+    dominant_emotion = "neutral"
+    intent = "reflection"
+    pattern = "general"
+
+    if any(k in t for k in ["hatırla", "hatırlıyor", "geçmiş", "önce", "az önce"]):
+        intent = "memory"
+        pattern = "past_reference"
+
+    if any(k in t for k in ["korku", "endişe", "çekiniyorum"]):
+        dominant_emotion = "fear"
+        pattern = "emotional_signal"
+
+    if any(k in t for k in ["yalnız", "boşluk", "kimse", "eksik"]):
+        dominant_emotion = "loneliness"
+        pattern = "inner_void"
+
+    if any(k in t for k in ["ne yapmalıyım", "nasıl", "hangi yol", "kararsız"]):
+        intent = "direction"
+        pattern = "guidance_need"
+
+    if any(k in t for k in ["sevgi", "aşk", "özledim", "kalp"]):
+        dominant_emotion = "love"
+        pattern = "heart_signal"
+
+    return {
+        "dominant_emotion": dominant_emotion,
+        "intent": intent,
+        "pattern": pattern,
+        "last_message": text_value[:500],
+    }
+
+
 @router.post("/ask", response_model=AskResponse)
 def ask(
     req: AskRequest,
@@ -64,21 +99,51 @@ def ask(
         # ============================
         memory_rows = db.execute(
             text("""
-                SELECT content
+                SELECT type, content
                 FROM user_memory
                 WHERE user_id = :uid
                 ORDER BY created_at DESC
-                LIMIT 5
+                LIMIT 8
             """),
             {"uid": int(x_user_id)},
         ).mappings().all()
 
         memory_text = "\n".join(
-            [str(row["content"]).strip() for row in memory_rows if row.get("content")]
+            [
+                f"{row['type']}: {str(row['content']).strip()}"
+                for row in memory_rows
+                if row.get("content")
+            ]
         ).strip()
 
         if not memory_text:
             memory_text = "No prior memory."
+
+        # ============================
+        # PROFILE GET
+        # ============================
+        profile_row = db.execute(
+            text("""
+                SELECT data
+                FROM user_profiles
+                WHERE user_id = :uid
+                LIMIT 1
+            """),
+            {"uid": int(x_user_id)},
+        ).mappings().first()
+
+        profile_data = {}
+        if profile_row and profile_row.get("data"):
+            try:
+                raw_data = profile_row["data"]
+                if isinstance(raw_data, dict):
+                    profile_data = raw_data
+                else:
+                    profile_data = json.loads(raw_data)
+            except Exception:
+                profile_data = {}
+
+        profile_text = json.dumps(profile_data, ensure_ascii=False) if profile_data else "No profile yet."
 
         system_prompt = (
             build_system_prompt("user")
@@ -86,40 +151,40 @@ def ask(
             + "MEMORY:\n"
             + memory_text
             + "\n\n"
+            + "USER PROFILE:\n"
+            + profile_text
+            + "\n\n"
             + "CRITICAL RULES:\n"
-            + "1. If the user asks whether you remember, you MUST use MEMORY.\n"
-            + "2. If there is relevant past context, mention it directly.\n"
-            + "3. Do not become abstract when memory is available.\n"
-            + "4. Stay short, clear, deep, and human.\n"
+            + "1. If the user asks what they said before, who said what, or whether you remember, you MUST answer directly from MEMORY.\n"
+            + "2. In memory questions, do NOT become abstract.\n"
+            + "3. If memory exists, use it clearly.\n"
+            + "4. Stay short, human, conscious, and clear.\n"
         )
 
         user_input = f"""
 IMPORTANT:
 
-User previously said:
+User profile:
+{profile_text}
+
+Conversation memory:
 {memory_text}
 
-Now user asks:
+Current user message:
 {user_message}
 
 RULE:
-If user is asking about past, you MUST answer directly using memory.
-
-Do NOT reflect.
-Do NOT go abstract.
-Answer clearly.
-
-Example:
-User: "Az önce ne yazdım?"
-You: "Az önce '...' yazdın."
+If the user is asking about past conversation, memory, or recall, answer directly using memory.
+Do NOT go abstract in those cases.
 
 Now respond:
-"""
+""".strip()
 
         print("SANRI MODEL =", MODEL)
         print("SANRI USER ID =", x_user_id)
         print("SANRI USER MESSAGE =", user_message)
-        print("SANRI MEMORY =", memory_text[:300])
+        print("SANRI MEMORY =", memory_text[:500])
+        print("SANRI PROFILE =", profile_text[:500])
 
         completion = client.chat.completions.create(
             model=MODEL,
@@ -142,10 +207,10 @@ Now respond:
         if not text_resp:
             text_resp = "Sanrı seni duydu."
 
-        print("SANRI RESPONSE =", text_resp[:300])
+        print("SANRI RESPONSE =", text_resp[:500])
 
         # ============================
-        # MEMORY SAVE
+        # MEMORY SAVE (USER)
         # ============================
         try:
             db.execute(
@@ -155,13 +220,74 @@ Now respond:
                 """),
                 {
                     "uid": int(x_user_id),
-                    "type": "chat",
-                    "content": user_message + " -> " + text_resp,
+                    "type": "user",
+                    "content": user_message,
                 },
             )
+
+            # ============================
+            # MEMORY SAVE (AI)
+            # ============================
+            db.execute(
+                text("""
+                    INSERT INTO user_memory (user_id, type, content)
+                    VALUES (:uid, :type, :content)
+                """),
+                {
+                    "uid": int(x_user_id),
+                    "type": "ai",
+                    "content": text_resp,
+                },
+            )
+
+            # ============================
+            # PROFILE UPSERT
+            # ============================
+            analyzed = analyze_user_signal(user_message)
+            merged_profile = {
+                **profile_data,
+                **analyzed,
+            }
+
+            existing_profile = db.execute(
+                text("""
+                    SELECT id
+                    FROM user_profiles
+                    WHERE user_id = :uid
+                    LIMIT 1
+                """),
+                {"uid": int(x_user_id)},
+            ).mappings().first()
+
+            if existing_profile:
+                db.execute(
+                    text("""
+                        UPDATE user_profiles
+                        SET data = :data,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = :uid
+                    """),
+                    {
+                        "uid": int(x_user_id),
+                        "data": json.dumps(merged_profile, ensure_ascii=False),
+                    },
+                )
+            else:
+                db.execute(
+                    text("""
+                        INSERT INTO user_profiles (user_id, data, updated_at)
+                        VALUES (:uid, :data, CURRENT_TIMESTAMP)
+                    """),
+                    {
+                        "uid": int(x_user_id),
+                        "data": json.dumps(merged_profile, ensure_ascii=False),
+                    },
+                )
+
             db.commit()
+
         except Exception as e:
-            print("MEMORY SAVE ERROR =", str(e))
+            print("MEMORY / PROFILE SAVE ERROR =", str(e))
 
         return {
             "answer": text_resp,
@@ -183,7 +309,7 @@ Now respond:
             "answer": fallback,
             "response": fallback,
             "session_id": req.session_id,
-            "prompt_version": "fallback_v6",
+            "prompt_version": "fallback_v7",
             "title": None,
             "message": None,
             "steps": None,
@@ -201,7 +327,7 @@ def get_memory(
 
     rows = db.execute(
         text("""
-            SELECT content, created_at
+            SELECT type, content, created_at
             FROM user_memory
             WHERE user_id = :uid
             ORDER BY created_at DESC
@@ -211,3 +337,45 @@ def get_memory(
     ).mappings().all()
 
     return rows
+
+
+@router.get("/profile")
+def get_profile(
+    x_user_id: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=400, detail="X-User-Id missing")
+
+    row = db.execute(
+        text("""
+            SELECT user_id, data, updated_at
+            FROM user_profiles
+            WHERE user_id = :uid
+            LIMIT 1
+        """),
+        {"uid": int(x_user_id)},
+    ).mappings().first()
+
+    if not row:
+        return {
+            "user_id": int(x_user_id),
+            "data": {},
+            "updated_at": None,
+        }
+
+    parsed = {}
+    try:
+        raw_data = row["data"]
+        if isinstance(raw_data, dict):
+            parsed = raw_data
+        else:
+            parsed = json.loads(raw_data)
+    except Exception:
+        parsed = {}
+
+    return {
+        "user_id": row["user_id"],
+        "data": parsed,
+        "updated_at": str(row["updated_at"]) if row.get("updated_at") else None,
+    }
