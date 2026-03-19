@@ -1,11 +1,12 @@
 from typing import List, Optional
 
+import os
+
 from fastapi import APIRouter, Header, HTTPException, Depends
 from pydantic import BaseModel
 from openai import OpenAI
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-import os
 
 from app.db import get_db
 from app.prompts.system_base import build_system_prompt, SANRI_PROMPT_VERSION
@@ -82,12 +83,23 @@ def ask(
         system_prompt = (
             build_system_prompt("user")
             + "\n\n"
-            + "MEMORY OF PREVIOUS CONVERSATIONS:\n"
+            + "MEMORY:\n"
             + memory_text
             + "\n\n"
-            + "Use memory only when relevant. "
-            + "If the user asks whether you remember them, answer based on memory naturally."
+            + "CRITICAL RULES:\n"
+            + "1. If the user asks whether you remember, you MUST use MEMORY.\n"
+            + "2. If there is relevant past context, mention it directly.\n"
+            + "3. Do not become abstract when memory is available.\n"
+            + "4. Stay short, clear, deep, and human.\n"
         )
+
+        user_input = f"""
+User message:
+{user_message}
+
+Relevant memory:
+{memory_text}
+""".strip()
 
         print("SANRI MODEL =", MODEL)
         print("SANRI USER ID =", x_user_id)
@@ -103,7 +115,7 @@ def ask(
                 },
                 {
                     "role": "user",
-                    "content": user_message,
+                    "content": user_input,
                 },
             ],
             temperature=1.0,
@@ -156,7 +168,7 @@ def ask(
             "answer": fallback,
             "response": fallback,
             "session_id": req.session_id,
-            "prompt_version": "fallback_v5",
+            "prompt_version": "fallback_v6",
             "title": None,
             "message": None,
             "steps": None,
