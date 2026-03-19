@@ -78,6 +78,68 @@ def analyze_user_signal(text_value: str) -> dict:
     }
 
 
+def detect_sanri_level(profile_data: dict) -> dict:
+    emotion = str(profile_data.get("dominant_emotion") or "neutral").lower()
+    intent = str(profile_data.get("intent") or "reflection").lower()
+    pattern = str(profile_data.get("pattern") or "general").lower()
+
+    level = 1
+    archetype = "mirror"
+    tone = "clear"
+
+    if intent == "memory":
+        level = 2
+        archetype = "rememberer"
+        tone = "direct"
+
+    if emotion in ["love", "loneliness"]:
+        level = 3
+        archetype = "heart_reader"
+        tone = "warm"
+
+    if intent == "direction":
+        level = 4
+        archetype = "path_opener"
+        tone = "focused"
+
+    if pattern in ["past_reference", "inner_void", "emotional_signal"] and intent in ["memory", "direction"]:
+        level = 5
+        archetype = "deep_witness"
+        tone = "deep"
+
+    return {
+        "sanri_level": level,
+        "sanri_archetype": archetype,
+        "sanri_tone": tone,
+    }
+
+
+def build_profile_prompt(profile_data: dict) -> str:
+    level = profile_data.get("sanri_level", 1)
+    archetype = profile_data.get("sanri_archetype", "mirror")
+    tone = profile_data.get("sanri_tone", "clear")
+    emotion = profile_data.get("dominant_emotion", "neutral")
+    intent = profile_data.get("intent", "reflection")
+
+    return f"""
+ACTIVE SANRI PROFILE
+level: {level}
+archetype: {archetype}
+tone: {tone}
+dominant_emotion: {emotion}
+intent: {intent}
+
+BEHAVIOR RULES
+- Level 1 mirror: short, simple, reflective
+- Level 2 rememberer: uses memory clearly
+- Level 3 heart_reader: warmer, more intimate
+- Level 4 path_opener: more directional and sharp
+- Level 5 deep_witness: deep, aware, precise, but still human
+
+Always match the active level naturally.
+""".strip()
+
+
 @router.post("/ask", response_model=AskResponse)
 def ask(
     req: AskRequest,
@@ -143,10 +205,24 @@ def ask(
             except Exception:
                 profile_data = {}
 
-        profile_text = json.dumps(profile_data, ensure_ascii=False) if profile_data else "No profile yet."
+        # ============================
+        # RUNTIME PROFILE
+        # ============================
+        runtime_analyzed = analyze_user_signal(user_message)
+        runtime_level_data = detect_sanri_level({**profile_data, **runtime_analyzed})
+        runtime_profile = {
+            **profile_data,
+            **runtime_analyzed,
+            **runtime_level_data,
+        }
+
+        profile_text = json.dumps(runtime_profile, ensure_ascii=False)
+        profile_prompt = build_profile_prompt(runtime_profile)
 
         system_prompt = (
             build_system_prompt("user")
+            + "\n\n"
+            + profile_prompt
             + "\n\n"
             + "MEMORY:\n"
             + memory_text
@@ -209,10 +285,8 @@ Now respond:
 
         print("SANRI RESPONSE =", text_resp[:500])
 
-        # ============================
-        # MEMORY SAVE (USER)
-        # ============================
         try:
+            # user memory
             db.execute(
                 text("""
                     INSERT INTO user_memory (user_id, type, content)
@@ -225,9 +299,7 @@ Now respond:
                 },
             )
 
-            # ============================
-            # MEMORY SAVE (AI)
-            # ============================
+            # ai memory
             db.execute(
                 text("""
                     INSERT INTO user_memory (user_id, type, content)
@@ -240,15 +312,7 @@ Now respond:
                 },
             )
 
-            # ============================
-            # PROFILE UPSERT
-            # ============================
-            analyzed = analyze_user_signal(user_message)
-            merged_profile = {
-                **profile_data,
-                **analyzed,
-            }
-
+            # profile upsert
             existing_profile = db.execute(
                 text("""
                     SELECT id
@@ -269,7 +333,7 @@ Now respond:
                     """),
                     {
                         "uid": int(x_user_id),
-                        "data": json.dumps(merged_profile, ensure_ascii=False),
+                        "data": json.dumps(runtime_profile, ensure_ascii=False),
                     },
                 )
             else:
@@ -280,7 +344,7 @@ Now respond:
                     """),
                     {
                         "uid": int(x_user_id),
-                        "data": json.dumps(merged_profile, ensure_ascii=False),
+                        "data": json.dumps(runtime_profile, ensure_ascii=False),
                     },
                 )
 
@@ -309,7 +373,7 @@ Now respond:
             "answer": fallback,
             "response": fallback,
             "session_id": req.session_id,
-            "prompt_version": "fallback_v7",
+            "prompt_version": "fallback_v8",
             "title": None,
             "message": None,
             "steps": None,
