@@ -181,6 +181,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         return {
             "requires_2fa": True,
             "email": user["email"],
+            "user_id": user["id"],
         }
 
     token = create_access_token({"sub": str(user["id"])})
