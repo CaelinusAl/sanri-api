@@ -94,12 +94,27 @@ def ask(
         )
 
         user_input = f"""
-User message:
+IMPORTANT:
+
+User previously said:
+{memory_text}
+
+Now user asks:
 {user_message}
 
-Relevant memory:
-{memory_text}
-""".strip()
+RULE:
+If user is asking about past, you MUST answer directly using memory.
+
+Do NOT reflect.
+Do NOT go abstract.
+Answer clearly.
+
+Example:
+User: "Az önce ne yazdım?"
+You: "Az önce '...' yazdın."
+
+Now respond:
+"""
 
         print("SANRI MODEL =", MODEL)
         print("SANRI USER ID =", x_user_id)
