@@ -1,4 +1,5 @@
 from typing import List, Optional
+import json
 
 from fastapi import APIRouter, Header, Depends, HTTPException
 from pydantic import BaseModel
@@ -115,7 +116,6 @@ def get_profile(
         if isinstance(raw_data, dict):
             parsed = raw_data
         else:
-            import json
             try:
                 parsed = json.loads(raw_data) if raw_data else {}
             except Exception:

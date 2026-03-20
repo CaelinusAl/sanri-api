@@ -2,6 +2,7 @@ import json
 import os
 
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.prompts.system_base import build_system_prompt, SANRI_PROMPT_VERSION
 from app.services.ai_service import get_client, generate_sanri_response
@@ -16,6 +17,46 @@ from app.services.profile_service import (
 MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 
 
+def get_daily_message_count(db: Session, user_id: int) -> int:
+    try:
+        row = db.execute(
+            text("""
+                SELECT COUNT(*) AS count
+                FROM user_memory
+                WHERE user_id = :uid
+                  AND type = 'user'
+                  AND DATE(created_at) = CURRENT_DATE
+            """),
+            {"uid": user_id},
+        ).mappings().first()
+
+        return int(row["count"]) if row and row.get("count") is not None else 0
+    except Exception as e:
+        print("SANRI DAILY COUNT ERROR =", repr(e))
+        return 0
+
+
+def check_is_premium(db: Session, user_id: int) -> bool:
+    try:
+        row = db.execute(
+            text("""
+                SELECT is_premium
+                FROM users
+                WHERE id = :uid
+                LIMIT 1
+            """),
+            {"uid": user_id},
+        ).mappings().first()
+
+        if not row:
+            return False
+
+        return bool(row.get("is_premium"))
+    except Exception as e:
+        print("SANRI PREMIUM CHECK ERROR =", repr(e))
+        return False
+
+
 def run_sanri(
     db: Session,
     user_id: int,
@@ -23,6 +64,26 @@ def run_sanri(
     session_id: str,
     lang: str = "tr",
 ) -> dict:
+    is_premium = check_is_premium(db, user_id)
+    daily_count = get_daily_message_count(db, user_id)
+
+    if not is_premium and daily_count >= 10:
+        limit_text = (
+            "Bugünlük ücretsiz kullanım sınırına ulaştın. "
+            "Yarın tekrar deneyebilir veya premium erişime geçebilirsin."
+        )
+
+        return {
+            "answer": limit_text,
+            "response": limit_text,
+            "session_id": session_id,
+            "prompt_version": "limit_v1",
+            "title": None,
+            "message": None,
+            "steps": None,
+            "closing": None,
+        }
+
     memory_text = load_memory(db, user_id)
     existing_profile = load_profile(db, user_id)
     runtime_profile = build_runtime_profile(existing_profile, user_message)
@@ -76,31 +137,26 @@ Do NOT go abstract in those cases.
 Now respond:
 """.strip()
 
-    print("SANRI USER ID =", user_id)
-    print("SANRI USER MESSAGE =", user_message)
-    print("SANRI MEMORY =", memory_text[:500])
-    print("SANRI PROFILE =", profile_text[:500])
-    print("SANRI MODEL =", MODEL)
-
     try:
         client = get_client()
+
         text_resp = generate_sanri_response(
             client=client,
             model=MODEL,
             system_prompt=system_prompt,
             user_input=user_input,
         )
-        print("SANRI RESPONSE =", text_resp[:500])
 
     except Exception as e:
         print("SANRI OPENAI ERROR =", repr(e))
-        text_resp = "Sanrı şu an sessizlikte cevap veriyor."
+
+        fallback_text = "Sanrı seni duyuyor. Şu an cevap akışı kısa bir sessizlikten geçiyor."
 
         return {
-            "answer": text_resp,
-            "response": text_resp,
+            "answer": fallback_text,
+            "response": fallback_text,
             "session_id": session_id,
-            "prompt_version": "fallback_v10",
+            "prompt_version": "fallback_v11",
             "title": None,
             "message": None,
             "steps": None,
