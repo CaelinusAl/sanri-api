@@ -28,14 +28,25 @@ class AskResponse(BaseModel):
     closing: Optional[str] = None
 
 
+def parse_user_id(raw_value: str) -> int:
+    cleaned = str(raw_value or "").replace("X-User-Id:", "").strip()
+
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="X-User-Id missing")
+
+    try:
+        return int(cleaned)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="INVALID_USER_ID")
+
+
 @router.post("/ask", response_model=AskResponse)
 def ask(
     req: AskRequest,
     x_user_id: str = Header(None),
     db: Session = Depends(get_db),
 ):
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="X-User-Id missing")
+    user_id = parse_user_id(x_user_id)
 
     user_message = (req.message or "").strip()
     if not user_message:
@@ -43,7 +54,7 @@ def ask(
 
     return run_sanri(
         db=db,
-        user_id=int(x_user_id),
+        user_id=user_id,
         user_message=user_message,
         session_id=req.session_id,
         lang=req.lang,
@@ -55,8 +66,7 @@ def get_memory(
     x_user_id: str = Header(None),
     db: Session = Depends(get_db),
 ):
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="X-User-Id missing")
+    user_id = parse_user_id(x_user_id)
 
     try:
         rows = db.execute(
@@ -67,7 +77,7 @@ def get_memory(
                 ORDER BY created_at DESC
                 LIMIT 20
             """),
-            {"uid": int(x_user_id)},
+            {"uid": user_id},
         ).mappings().all()
 
         return rows
@@ -81,8 +91,7 @@ def get_profile(
     x_user_id: str = Header(None),
     db: Session = Depends(get_db),
 ):
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="X-User-Id missing")
+    user_id = parse_user_id(x_user_id)
 
     try:
         row = db.execute(
@@ -92,12 +101,12 @@ def get_profile(
                 WHERE user_id = :uid
                 LIMIT 1
             """),
-            {"uid": int(x_user_id)},
+            {"uid": user_id},
         ).mappings().first()
 
         if not row:
             return {
-                "user_id": int(x_user_id),
+                "user_id": user_id,
                 "data": {},
                 "updated_at": None,
             }
@@ -120,7 +129,7 @@ def get_profile(
     except Exception as e:
         print("GET PROFILE ERROR =", repr(e))
         return {
-            "user_id": int(x_user_id),
+            "user_id": user_id,
             "data": {},
             "updated_at": None,
         }
