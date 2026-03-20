@@ -1,12 +1,10 @@
 import json
 import os
 
-from fastapi import HTTPException
-from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.prompts.system_base import build_system_prompt, SANRI_PROMPT_VERSION
-from app.services.ai_service import generate_sanri_response
+from app.services.ai_service import get_client, generate_sanri_response
 from app.services.memory_service import load_memory, save_memory
 from app.services.profile_service import (
     load_profile,
@@ -16,17 +14,6 @@ from app.services.profile_service import (
 )
 
 MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
-
-
-def get_client() -> OpenAI:
-    key = (os.getenv("OPENAI_API_KEY") or "").strip()
-    print("DEBUG OPENAI KEY =", key[:10] if key else "NONE")
-    print("DEBUG OPENAI MODEL =", MODEL)
-
-    if not key:
-        raise HTTPException(status_code=500, detail="OPENAI_KEY_MISSING")
-
-    return OpenAI(api_key=key)
 
 
 def run_sanri(
@@ -93,6 +80,7 @@ Now respond:
     print("SANRI USER MESSAGE =", user_message)
     print("SANRI MEMORY =", memory_text[:500])
     print("SANRI PROFILE =", profile_text[:500])
+    print("SANRI MODEL =", MODEL)
 
     try:
         client = get_client()
