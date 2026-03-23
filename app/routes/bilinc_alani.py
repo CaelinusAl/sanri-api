@@ -16,6 +16,10 @@ class AskRequest(BaseModel):
     message: str
     session_id: str = "default"
     lang: str = "tr"
+    mode: str = "mirror"
+    domain: str = "auto"
+    system_context: Optional[str] = None
+    gate_name: Optional[str] = None
 
 
 class AskResponse(BaseModel):
@@ -29,15 +33,19 @@ class AskResponse(BaseModel):
     closing: Optional[str] = None
 
 
-def parse_user_id(raw_value: str) -> int:
+def parse_user_id(raw_value: str, allow_anonymous: bool = False) -> int:
     cleaned = str(raw_value or "").replace("X-User-Id:", "").strip()
 
     if not cleaned:
+        if allow_anonymous:
+            return 0
         raise HTTPException(status_code=400, detail="X-User-Id missing")
 
     try:
         return int(cleaned)
     except ValueError:
+        if allow_anonymous:
+            return 0
         raise HTTPException(status_code=400, detail="INVALID_USER_ID")
 
 
@@ -47,7 +55,7 @@ def ask(
     x_user_id: str = Header(None),
     db: Session = Depends(get_db),
 ):
-    user_id = parse_user_id(x_user_id)
+    user_id = parse_user_id(x_user_id, allow_anonymous=True)
 
     user_message = (req.message or "").strip()
     if not user_message:
@@ -59,6 +67,8 @@ def ask(
         user_message=user_message,
         session_id=req.session_id,
         lang=req.lang,
+        system_context=req.system_context,
+        gate_name=req.gate_name,
     )
 
 

@@ -1,11 +1,26 @@
 # app/services/daily_stream.py
 import json
+import re
 from datetime import date, datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.models.content import DailyStream, WeeklySymbol
+from app.services.ai_service import get_client
 import os
+
+
+def ensure_json_obj(raw: str) -> dict:
+    """LLM cevabindan JSON objesi cikarir. Markdown fence varsa soyar."""
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+    cleaned = re.sub(r"```\s*$", "", cleaned).strip()
+    try:
+        obj = json.loads(cleaned)
+        if isinstance(obj, dict):
+            return obj
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return {}
 
 def _week_key(d: date) -> str:
     iso_year, iso_week, _ = d.isocalendar()

@@ -5,7 +5,6 @@ from fastapi import HTTPException
 
 def get_client() -> OpenAI:
     key = (os.getenv("OPENAI_API_KEY") or "").strip()
-    print("DEBUG OPENAI KEY =", key[:10] if key else "NONE")
 
     if not key:
         raise HTTPException(status_code=500, detail="OPENAI_KEY_MISSING")

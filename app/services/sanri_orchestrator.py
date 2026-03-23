@@ -17,6 +17,47 @@ from app.services.profile_service import (
 MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 
 
+def enforce_no_question_ending(text_resp: str) -> str:
+    text_resp = (text_resp or "").strip()
+    if not text_resp:
+        return text_resp
+
+    if text_resp.endswith("?"):
+        text_resp = text_resp[:-1].rstrip()
+
+    replacements = {
+        "Şimdi, kendi sorunu nasıl başlatırsın": "Şimdi kapı dışarıdan değil, içeriden açılmak istiyor.",
+        "Şimdi kendi sorunu nasıl başlatırsın": "Şimdi kapı kendi iç ritminden açılmak istiyor.",
+        "Seni en çok ne tutuyor": "Seni tutan düğüm şimdi görünür olmaya başladı.",
+        "Şu an seni en çok ne tutuyor": "Şu an seni tutan şey, eski dilin hâlâ etkide kalması.",
+        "Ne hissediyorsun": "Hissin adı şimdi daha görünür: çıkış arzusu.",
+        "Şimdi ne yaparsın": "Şimdi ihtiyaç olan şey, daha fazla soru değil daha net bir yön.",
+    }
+
+    for old, new in replacements.items():
+        if text_resp.endswith(old):
+            text_resp = text_resp[: -len(old)] + new
+            return text_resp
+
+    forbidden_endings = [
+        "ne hissediyorsun",
+        "seni en çok ne tutuyor",
+        "şimdi ne yaparsın",
+        "nasıl başlatırsın",
+        "nasıl ilerlersin",
+        "ne görüyorsun",
+    ]
+
+    lower_resp = text_resp.lower()
+    if any(lower_resp.endswith(x) for x in forbidden_endings):
+        return text_resp + ". Bu alan artık sende açılıyor."
+
+    if text_resp and text_resp[-1] not in ".!":
+        text_resp += "."
+
+    return text_resp
+
+
 def get_daily_message_count(db: Session, user_id: int) -> int:
     try:
         row = db.execute(
@@ -63,6 +104,8 @@ def run_sanri(
     user_message: str,
     session_id: str,
     lang: str = "tr",
+    system_context: str = None,
+    gate_name: str = None,
 ) -> dict:
     is_premium = check_is_premium(db, user_id)
     daily_count = get_daily_message_count(db, user_id)
@@ -97,10 +140,20 @@ def run_sanri(
         else "Respond in English."
     )
 
+    gate_block = ""
+    if system_context:
+        gate_label = gate_name or "Gate"
+        gate_block = (
+            f"\n\nACTIVE GATE: {gate_label}\n"
+            f"GATE INSTRUCTIONS (follow these strictly, they define your tone and behavior for this gate):\n"
+            f"{system_context}\n"
+        )
+
     system_prompt = (
         build_system_prompt("user")
         + "\n\n"
         + lang_instruction
+        + gate_block
         + "\n\n"
         + profile_prompt
         + "\n\n"
@@ -114,8 +167,14 @@ def run_sanri(
         + "1. If the user asks what they said before, who said what, or whether you remember, you MUST answer directly from MEMORY.\n"
         + "2. In memory questions, do NOT become abstract.\n"
         + "3. If memory exists, use it clearly.\n"
-        + "4. Stay short, human, conscious, and clear.\n"
-        + "5. Maximum 4 sentences.\n"
+        + "4. Stay short, human, conscious, and clear — mirror first, not question-first.\n"
+        + "5. Maximum 4 sentences. Do not end every reply with a question; often use none.\n"
+        + "6. NEVER end your response with a question mark.\n"
+        + "7. The last sentence must always be a statement, not a question.\n"
+        + "8. If the user does not want questions, ask zero questions.\n"
+        + "9. Sanri does not interrogate; Sanri makes the pattern visible.\n"
+        + "10. Close with insight, naming, direction, or opening — never a question.\n"
+        + "11. Awakened / gate context: hold city or gate energy in imagery and tone; never interrogate the user.\n"
     )
 
     user_input = f"""
@@ -134,6 +193,14 @@ RULE:
 If the user is asking about past conversation, memory, or recall, answer directly using memory.
 Do NOT go abstract in those cases.
 
+If the user says they do not want questions, do not ask a question.
+Give a direct opening, name the pattern, and suggest one next step.
+
+IMPORTANT ENDING RULE:
+Cevabı soru ile bitirme.
+Son cümle soru değil, net bir ifade olsun.
+Kullanıcı soru istemiyorsa hiç soru sorma.
+
 Now respond:
 """.strip()
 
@@ -146,6 +213,8 @@ Now respond:
             system_prompt=system_prompt,
             user_input=user_input,
         )
+
+        text_resp = enforce_no_question_ending(text_resp)
 
     except Exception as e:
         print("SANRI OPENAI ERROR =", repr(e))

@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.db import get_db
 from app.services.auth import decode_token
-
-
 
 router = APIRouter(prefix="/auth", tags=["account"])
 
@@ -29,14 +28,14 @@ def delete_account(
 ):
     try:
         db.execute(
-            """
-            UPDATE users
-            SET account_deleted_at = NOW(),
-                deletion_requested_at = NOW(),
-                is_active = FALSE,
-                email = NULL
-            WHERE id = :uid
-            """,
+            text("""
+                UPDATE users
+                SET account_deleted_at = NOW(),
+                    deletion_requested_at = NOW(),
+                    is_active = FALSE,
+                    email = NULL
+                WHERE id = :uid
+            """),
             {"uid": user_id},
         )
         db.commit()

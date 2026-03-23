@@ -8,13 +8,16 @@ class DailyStream(Base):
     __tablename__ = "daily_stream"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    day = Column(Date, nullable=False) # date.today()
-    lang = Column(String, nullable=False) # "tr" | "en"
+    day = Column(Date, nullable=False)
+    lang = Column(String, nullable=False)
 
+    kicker = Column(String, nullable=True)
     title = Column(String, nullable=True)
-    message = Column(Text, nullable=False) # ana akış
-    short = Column(Text, nullable=True) # 1 cümle özet
-    tags = Column(Text, nullable=True) # json string
+    subtitle = Column(String, nullable=True)
+    body = Column(Text, nullable=True)
+    message = Column(Text, nullable=True)
+    short = Column(Text, nullable=True)
+    tags = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -26,13 +29,14 @@ class WeeklySymbol(Base):
     __tablename__ = "weekly_symbol"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    week_key = Column(String, nullable=False) # "YYYY-WW"
+    week_key = Column(String, nullable=False)
     lang = Column(String, nullable=False)
 
-    title = Column(String, nullable=False)
+    title = Column(String, nullable=True)
     subtitle = Column(String, nullable=True)
-    reading = Column(Text, nullable=False) # uzun metin
-    tags = Column(Text, nullable=True) # json string
+    body = Column(Text, nullable=True)
+    reading = Column(Text, nullable=True)
+    tags = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

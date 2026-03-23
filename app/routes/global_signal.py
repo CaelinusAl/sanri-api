@@ -9,6 +9,8 @@ router = APIRouter(prefix="/global-signal", tags=["global-signal"])
 GLOBAL_SIGNALS: List[Dict[str, Any]] = []
 GLOBAL_NOTIFICATIONS: List[Dict[str, Any]] = []
 
+MAX_SIGNALS = 5000
+MAX_NOTIFICATIONS = 2000
 ECHO_DELAY_MINUTES = 10
 
 
@@ -114,6 +116,8 @@ def send_global_signal(payload: SignalIn, request: Request):
     }
 
     GLOBAL_SIGNALS.insert(0, signal)
+    if len(GLOBAL_SIGNALS) > MAX_SIGNALS:
+        GLOBAL_SIGNALS[:] = GLOBAL_SIGNALS[:MAX_SIGNALS]
 
     return {
         "ok": True,
@@ -163,6 +167,8 @@ def process_echoes(force: bool = Query(default=False)):
                 "is_read": False,
             }
             GLOBAL_NOTIFICATIONS.insert(0, notification)
+            if len(GLOBAL_NOTIFICATIONS) > MAX_NOTIFICATIONS:
+                GLOBAL_NOTIFICATIONS[:] = GLOBAL_NOTIFICATIONS[:MAX_NOTIFICATIONS]
             created_notifications.append(notification)
 
     return {
