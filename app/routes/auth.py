@@ -76,6 +76,8 @@ def get_current_user(
             SELECT
                 id,
                 email,
+                role,
+                is_premium,
                 two_fa_enabled,
                 created_at
             FROM users
@@ -126,7 +128,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
                 :password_hash,
                 FALSE
             )
-            RETURNING id, email, two_fa_enabled, created_at
+            RETURNING id, email, two_fa_enabled, role, is_premium, created_at
         """),
         {
             "email": email,
@@ -143,6 +145,8 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
         "user": {
             "id": user["id"],
             "email": user["email"],
+            "role": user.get("role", "free"),
+            "is_premium": bool(user.get("is_premium", False)),
             "two_fa_enabled": user["two_fa_enabled"],
             "created_at": str(user["created_at"]) if user.get("created_at") else None,
         },
@@ -163,7 +167,11 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
                 id,
                 email,
                 password_hash,
-                two_fa_enabled
+                two_fa_enabled,
+                role,
+                is_premium,
+                name,
+                phone
             FROM users
             WHERE email = :email
             LIMIT 1
@@ -191,6 +199,10 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         "user": {
             "id": user["id"],
             "email": user["email"],
+            "name": user.get("name"),
+            "phone": user.get("phone"),
+            "role": user.get("role", "free"),
+            "is_premium": bool(user.get("is_premium", False)),
             "two_fa_enabled": user["two_fa_enabled"],
         },
     }
@@ -357,6 +369,64 @@ def verify_2fa_login(payload: Verify2FALoginIn, db: Session = Depends(get_db)):
         "user": {
             "id": user["id"],
             "email": user["email"],
+            "role": user.get("role", "free"),
+            "is_premium": bool(user.get("is_premium", False)),
             "two_fa_enabled": user["two_fa_enabled"],
         },
     }
+
+
+# =========================================================
+# ADMIN: SET ROLE
+# =========================================================
+
+class SetRoleIn(BaseModel):
+    target_user_id: int
+    role: str
+
+@router.post("/admin/set-role")
+def admin_set_role(
+    payload: SetRoleIn,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    caller_role = db.execute(
+        text("SELECT role FROM users WHERE id = :uid LIMIT 1"),
+        {"uid": current_user["id"]},
+    ).scalar()
+
+    if caller_role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    db.execute(
+        text("UPDATE users SET role = :role WHERE id = :uid"),
+        {"role": payload.role, "uid": payload.target_user_id},
+    )
+    db.commit()
+
+    return {"ok": True, "user_id": payload.target_user_id, "role": payload.role}
+
+
+# =========================================================
+# BOOTSTRAP: first admin (one-time, hardcoded to user 29)
+# =========================================================
+
+@router.post("/bootstrap-admin")
+def bootstrap_admin(db: Session = Depends(get_db)):
+    BOOTSTRAP_UID = 29
+
+    current = db.execute(
+        text("SELECT role FROM users WHERE id = :uid LIMIT 1"),
+        {"uid": BOOTSTRAP_UID},
+    ).scalar()
+
+    if current == "admin":
+        return {"ok": True, "message": "Already admin"}
+
+    db.execute(
+        text("UPDATE users SET role = 'admin', is_premium = TRUE WHERE id = :uid"),
+        {"uid": BOOTSTRAP_UID},
+    )
+    db.commit()
+
+    return {"ok": True, "user_id": BOOTSTRAP_UID, "role": "admin"}
