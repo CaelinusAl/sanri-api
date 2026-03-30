@@ -43,6 +43,7 @@ from app.routes.account import router as account_router
 from app.routes.ritual_voice import router as ritual_voice_router
 from app.routes.gates import router as gates_router
 from app.routes.awakened_content import router as awakened_content_router
+from app.routes.yanki import router as yanki_router
 
 
 
@@ -151,3 +152,4 @@ app.include_router(account_router)
 app.include_router(ritual_voice_router)
 app.include_router(gates_router)
 app.include_router(awakened_content_router)
+app.include_router(yanki_router)
