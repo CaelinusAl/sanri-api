@@ -18,8 +18,47 @@ from app.services.auth import (
     create_access_token,
     decode_token,
 )
+from app.services.email_service import (
+    create_verification_code,
+    verify_code,
+    send_verification_email,
+    send_password_reset_email,
+)
+
+
+def ensure_auth_tables(db_engine):
+    """Auto-create verification_codes table and email_verified column if missing."""
+    from sqlalchemy import text as _text, inspect
+    with db_engine.connect() as conn:
+        conn.execute(_text("""
+            CREATE TABLE IF NOT EXISTS verification_codes (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                code VARCHAR(6) NOT NULL,
+                type VARCHAR(20) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(_text("""
+            DO $$ BEGIN
+                ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT FALSE;
+            EXCEPTION
+                WHEN duplicate_column THEN NULL;
+            END $$;
+        """))
+        conn.commit()
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+from app.db import engine
+try:
+    ensure_auth_tables(engine)
+except Exception as e:
+    print(f"[AUTH] Table migration warning: {e}")
 
 
 # =========================================================
@@ -48,6 +87,30 @@ class Verify2FASetupIn(BaseModel):
 class Verify2FALoginIn(BaseModel):
     email: EmailStr
     code: str
+
+
+class VerifyEmailIn(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    email: EmailStr
+    code: str
+    password: str
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ResendVerificationIn(BaseModel):
+    email: EmailStr
 
 
 # =========================================================
@@ -79,7 +142,8 @@ def get_current_user(
                 role,
                 is_premium,
                 two_fa_enabled,
-                created_at
+                created_at,
+                email_verified
             FROM users
             WHERE id = :uid
             LIMIT 1
@@ -138,6 +202,12 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 
     db.commit()
 
+    try:
+        code = create_verification_code(db, user["id"], email, "email_verify")
+        send_verification_email(email, code)
+    except Exception as e:
+        print(f"[AUTH] Verification email failed: {e}")
+
     token = create_access_token({"sub": str(user["id"])})
 
     return {
@@ -148,6 +218,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
             "role": user.get("role", "free"),
             "is_premium": bool(user.get("is_premium", False)),
             "two_fa_enabled": user["two_fa_enabled"],
+            "email_verified": False,
             "created_at": str(user["created_at"]) if user.get("created_at") else None,
         },
     }
@@ -171,7 +242,8 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
                 role,
                 is_premium,
                 name,
-                phone
+                phone,
+                email_verified
             FROM users
             WHERE email = :email
             LIMIT 1
@@ -204,6 +276,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
             "role": user.get("role", "free"),
             "is_premium": bool(user.get("is_premium", False)),
             "two_fa_enabled": user["two_fa_enabled"],
+            "email_verified": bool(user.get("email_verified", False)),
         },
     }
 
@@ -374,6 +447,147 @@ def verify_2fa_login(payload: Verify2FALoginIn, db: Session = Depends(get_db)):
             "two_fa_enabled": user["two_fa_enabled"],
         },
     }
+
+
+# =========================================================
+# EMAIL VERIFICATION
+# =========================================================
+
+@router.post("/email/verify")
+def verify_email_code(payload: VerifyEmailIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+    
+    result = verify_code(db, email, payload.code.strip(), "email_verify")
+    if not result:
+        raise HTTPException(status_code=400, detail="Geçersiz veya süresi dolmuş kod.")
+    
+    db.execute(
+        text("UPDATE users SET email_verified = TRUE WHERE id = :uid"),
+        {"uid": result["user_id"]},
+    )
+    db.commit()
+    
+    token = create_access_token({"sub": str(result["user_id"])})
+    
+    user = db.execute(
+        text("SELECT id, email, role, is_premium, two_fa_enabled FROM users WHERE id = :uid LIMIT 1"),
+        {"uid": result["user_id"]},
+    ).mappings().first()
+    
+    return {
+        "ok": True,
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "role": user.get("role", "free"),
+            "is_premium": bool(user.get("is_premium", False)),
+            "two_fa_enabled": user["two_fa_enabled"],
+            "email_verified": True,
+        },
+    }
+
+
+@router.post("/email/resend-verification")
+def resend_verification(payload: ResendVerificationIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+    
+    user = db.execute(
+        text("SELECT id, email_verified FROM users WHERE email = :email LIMIT 1"),
+        {"email": email},
+    ).mappings().first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+    
+    if user.get("email_verified"):
+        return {"ok": True, "message": "E-posta zaten doğrulanmış."}
+    
+    code = create_verification_code(db, user["id"], email, "email_verify")
+    sent = send_verification_email(email, code)
+    
+    if not sent:
+        print(f"[AUTH] Resend verification: code={code} for {email}")
+    
+    return {"ok": True, "message": "Doğrulama kodu gönderildi."}
+
+
+# =========================================================
+# FORGOT PASSWORD
+# =========================================================
+
+@router.post("/email/forgot-password")
+def forgot_password(payload: ForgotPasswordIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+    
+    user = db.execute(
+        text("SELECT id FROM users WHERE email = :email LIMIT 1"),
+        {"email": email},
+    ).mappings().first()
+    
+    if not user:
+        return {"ok": True, "message": "Eğer bu e-posta kayıtlıysa, sıfırlama kodu gönderildi."}
+    
+    code = create_verification_code(db, user["id"], email, "password_reset")
+    sent = send_password_reset_email(email, code)
+    
+    if not sent:
+        print(f"[AUTH] Password reset: code={code} for {email}")
+    
+    return {"ok": True, "message": "Eğer bu e-posta kayıtlıysa, sıfırlama kodu gönderildi."}
+
+
+@router.post("/email/reset-password")
+def reset_password(payload: ResetPasswordIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+    
+    if len(payload.password.strip()) < 6:
+        raise HTTPException(status_code=400, detail="Şifre en az 6 karakter olmalı.")
+    
+    result = verify_code(db, email, payload.code.strip(), "password_reset")
+    if not result:
+        raise HTTPException(status_code=400, detail="Geçersiz veya süresi dolmuş kod.")
+    
+    password_hash = hash_password(payload.password.strip())
+    
+    db.execute(
+        text("UPDATE users SET password_hash = :ph WHERE id = :uid"),
+        {"ph": password_hash, "uid": result["user_id"]},
+    )
+    db.commit()
+    
+    return {"ok": True, "message": "Şifre başarıyla güncellendi."}
+
+
+# =========================================================
+# CHANGE PASSWORD (authenticated)
+# =========================================================
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordIn,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if len(payload.new_password.strip()) < 6:
+        raise HTTPException(status_code=400, detail="Yeni şifre en az 6 karakter olmalı.")
+    
+    user = db.execute(
+        text("SELECT password_hash FROM users WHERE id = :uid LIMIT 1"),
+        {"uid": current_user["id"]},
+    ).mappings().first()
+    
+    if not user or not verify_password(payload.current_password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Mevcut şifre hatalı.")
+    
+    new_hash = hash_password(payload.new_password.strip())
+    db.execute(
+        text("UPDATE users SET password_hash = :ph WHERE id = :uid"),
+        {"ph": new_hash, "uid": current_user["id"]},
+    )
+    db.commit()
+    
+    return {"ok": True, "message": "Şifre başarıyla değiştirildi."}
 
 
 # =========================================================
