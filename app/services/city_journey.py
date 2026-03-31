@@ -13,6 +13,19 @@ def _load_city_map() -> Dict[str, Any]:
 CITY_MAP = _load_city_map()
 
 
+def list_cities() -> list:
+    result = []
+    for plate, ci in sorted(CITY_MAP.items()):
+        result.append({
+            "plate": plate,
+            "city": ci.get("city", ""),
+            "title": ci.get("title", ""),
+            "element": ci.get("element", ""),
+            "archetype": ci.get("archetype", ""),
+        })
+    return result
+
+
 def build_city_journey(plate: str) -> Dict[str, Any]:
     plate = (plate or "").strip()
     ci = CITY_MAP.get(plate)
