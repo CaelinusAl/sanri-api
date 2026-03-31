@@ -1,4 +1,4 @@
-﻿
+
 # app/main.py
 from dotenv import load_dotenv
 load_dotenv()
@@ -25,7 +25,7 @@ from app.routes.daily_stream import router as stream_router
 from app.routes.rituals import router as rituals_router
 from app.routes.consciousness import router as consciousness_router
 from app.routes.system_feed import router as system_feed_router
-from app.routes.world_events import router as world_events_router
+# world_events.py removed: duplicate of world_events_public.py
 from app.routes.ritual_feed import router as ritual_feed_router
 from app.routes.me import router as me_router
 from app.routes.memory_profile import router as memory_profile_router
@@ -41,6 +41,9 @@ from app.routes.dream import router as dream_router
 from app.routes import global_signal
 from app.routes.account import router as account_router
 from app.routes.ritual_voice import router as ritual_voice_router
+from app.routes.gates import router as gates_router
+from app.routes.awakened_content import router as awakened_content_router
+from app.routes.yanki import router as yanki_router
 
 
 
@@ -132,7 +135,7 @@ app.include_router(stream_router)
 app.include_router(rituals_router)
 app.include_router(consciousness_router)
 app.include_router(system_feed_router)
-app.include_router(world_events_router)
+# world_events_router removed: duplicate of world_events_public_router
 app.include_router(ritual_feed_router)
 app.include_router(me_router)
 app.include_router(memory_profile_router)
@@ -147,3 +150,6 @@ app.include_router(dream_router)
 app.include_router(global_signal.router)
 app.include_router(account_router)
 app.include_router(ritual_voice_router)
+app.include_router(gates_router)
+app.include_router(awakened_content_router)
+app.include_router(yanki_router)

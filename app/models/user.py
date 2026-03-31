@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
 from app.db import Base
 
 class User(Base):
@@ -42,5 +42,15 @@ class User(Base):
     # hesap silme akışı
     deletion_requested_at = Column(DateTime, nullable=True)
     account_deleted_at = Column(DateTime, nullable=True)
+
+    # Yanki profile extensions
+    display_name = Column(String, nullable=True)
+    avatar_url = Column(String, nullable=True)
+    bio = Column(Text, nullable=True)
+
+    # Streak tracking
+    last_active_date = Column(String, nullable=True)
+    current_streak = Column(Integer, default=0, nullable=False)
+    longest_streak = Column(Integer, default=0, nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

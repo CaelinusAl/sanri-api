@@ -76,6 +76,7 @@ def get_current_user(
             SELECT
                 id,
                 email,
+                role,
                 two_fa_enabled,
                 created_at
             FROM users
