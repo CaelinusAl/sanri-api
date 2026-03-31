@@ -107,6 +107,9 @@ def matrix_rol(req: MatrixRolRequest):
     except Exception as e:
         # 500 yerine anlamlı hata döndür
         raise HTTPException(status_code=500, detail=f"MATRIX_BASE_ERROR: {type(e).__name__}: {str(e)}")
+
+
+@router.post("/yorum")
 def matrix_rol_yorum(
     req: MatrixRolYorumRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),

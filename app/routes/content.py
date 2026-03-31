@@ -29,11 +29,12 @@ def daily_stream(
 
     row = get_or_create_daily(db, lang=lang)
     return {
-        "day": str(row.day),
-        "lang": row.lang,
-        "title": row.title,
-        "body": row.body,
-        "tags": [t for t in (row.tags or "").split(",") if t],
+        "day": str(row.get("day", "")),
+        "lang": row.get("lang", lang),
+        "title": row.get("title", ""),
+        "message": row.get("message", ""),
+        "short": row.get("short", ""),
+        "tags": row.get("tags", []),
     }
 
 @router.post("/daily_stream/generate")
@@ -45,4 +46,4 @@ def daily_stream_generate(
     # Cron job buradan çağırır (güvenli)
     _require_cron_secret(x_cron_token)
     row = get_or_create_daily(db, lang=lang)
-    return {"ok": True, "day": str(row.day), "lang": row.lang}
+    return {"ok": True, "day": str(row.get("day", "")), "lang": row.get("lang", lang)}

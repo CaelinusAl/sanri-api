@@ -1,6 +1,5 @@
 # app/services/memory.py
 
-import uuid
 from typing import List, Dict
 from sqlalchemy.orm import Session
 
@@ -11,7 +10,7 @@ from app.models.memory import Memory
 # SAVE MEMORY
 # ---------------------------------------------------
 
-def save_memory(db: Session, user_id: int, message: str, response: str):
+def save_memory(db: Session, user_id, message: str, response: str):
     """
     Kullanıcı mesajını ve Sanrı cevabını hafızaya kaydeder
     """
@@ -19,10 +18,10 @@ def save_memory(db: Session, user_id: int, message: str, response: str):
     try:
 
         row = Memory(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            message=message,
-            response=response
+            user_id=str(user_id),
+            type="auto",
+            input_text=message,
+            output_text=response,
         )
 
         db.add(row)
@@ -58,8 +57,8 @@ def get_user_memory(db: Session, user_id: int, limit: int = 12) -> List[Dict]:
         for r in rows:
             result.append(
                 {
-                    "message": r.message or "",
-                    "response": r.response or ""
+                    "message": r.input_text or "",
+                    "response": r.output_text or ""
                 }
             )
 

@@ -63,6 +63,8 @@ def run_sanri(
     user_message: str,
     session_id: str,
     lang: str = "tr",
+    system_context: str = None,
+    gate_name: str = None,
 ) -> dict:
     is_premium = check_is_premium(db, user_id)
     daily_count = get_daily_message_count(db, user_id)
@@ -97,10 +99,20 @@ def run_sanri(
         else "Respond in English."
     )
 
+    gate_block = ""
+    if system_context:
+        gate_label = gate_name or "Gate"
+        gate_block = (
+            f"\n\nACTIVE GATE: {gate_label}\n"
+            f"GATE INSTRUCTIONS (follow these strictly, they define your tone and behavior for this gate):\n"
+            f"{system_context}\n"
+        )
+
     system_prompt = (
         build_system_prompt("user")
         + "\n\n"
         + lang_instruction
+        + gate_block
         + "\n\n"
         + profile_prompt
         + "\n\n"
@@ -114,8 +126,9 @@ def run_sanri(
         + "1. If the user asks what they said before, who said what, or whether you remember, you MUST answer directly from MEMORY.\n"
         + "2. In memory questions, do NOT become abstract.\n"
         + "3. If memory exists, use it clearly.\n"
-        + "4. Stay short, human, conscious, and clear.\n"
-        + "5. Maximum 4 sentences.\n"
+        + "4. Stay short, human, conscious, and clear — mirror first, not question-first.\n"
+        + "5. Maximum 4 sentences. Do not end every reply with a question; often use none.\n"
+        + "6. Awakened / gate context: hold city or gate energy in imagery and tone; never interrogate the user.\n"
     )
 
     user_input = f"""

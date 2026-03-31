@@ -1,8 +1,7 @@
-# app/routes/device.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from fastapi import Depends
+from sqlalchemy import text
 
 from app.db import get_db
 
@@ -20,13 +19,13 @@ class DeviceRegisterIn(BaseModel):
 def register_device(payload: DeviceRegisterIn, db: Session = Depends(get_db)):
     try:
         db.execute(
-            """
-            UPDATE users
-            SET device_token = :token,
-                platform = :platform,
-                lang = :lang
-            WHERE id = :uid
-            """,
+            text("""
+                UPDATE users
+                SET device_token = :token,
+                    platform = :platform,
+                    lang = :lang
+                WHERE id = :uid
+            """),
             {
                 "token": payload.device_token,
                 "platform": payload.platform,
