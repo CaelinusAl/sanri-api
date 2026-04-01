@@ -29,6 +29,7 @@ httpx==0.27.0
 
 # --- PAYMENTS ---
 stripe>=8.0.0
+iyzipay>=1.0.46
 
 # --- UTIL ---
 typing_extensions==4.12.2
