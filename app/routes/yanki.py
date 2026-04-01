@@ -2,7 +2,8 @@ from typing import Optional, List
 from datetime import datetime
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func, inspect
@@ -12,6 +13,7 @@ from app.routes.auth import get_current_user
 from app.models.yanki import YankiPost, YankiComment, YankiReaction, YankiReport
 from app.models.sanri_reflection import SanriReflection
 from app.models.notification import YankiNotification
+from app.models.referral import YankiReferral
 
 router = APIRouter(prefix="/yanki", tags=["yanki"])
 
@@ -240,6 +242,56 @@ def _sanitize(text_raw: str) -> str:
     return cleaned
 
 
+# ── PUBLIC: OG meta HTML for crawlers ────────────────────────────
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://asksanri.com")
+
+@router.get("/og/{post_id}", response_class=HTMLResponse)
+def og_meta_page(post_id: int, db: Session = Depends(get_db)):
+    """Serve minimal HTML with OG tags for social media crawlers."""
+    post = (
+        db.query(YankiPost)
+        .filter(YankiPost.id == post_id, YankiPost.status == "published")
+        .first()
+    )
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    d = post.to_public_dict()
+    title = d.get("title") or "Yankı Alanı"
+    content = (d.get("content") or "")[:200]
+    category = d.get("category", "genel")
+    author = d.get("author_name") or "Anonim"
+    canonical = f"{FRONTEND_URL}/yanki/{post_id}"
+    og_image = f"{FRONTEND_URL}/assets/og/yanki-share.jpg"
+    description = f"{content}... — {author}"
+
+    html = f"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"/>
+<title>{title} — Yankı Alanı</title>
+<meta name="description" content="{description}"/>
+<meta property="og:type" content="article"/>
+<meta property="og:title" content="{title} — Yankı Alanı"/>
+<meta property="og:description" content="{description}"/>
+<meta property="og:url" content="{canonical}"/>
+<meta property="og:image" content="{og_image}"/>
+<meta property="og:site_name" content="CAELINUS AI — SANRI"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="{title} — Yankı Alanı"/>
+<meta name="twitter:description" content="{description}"/>
+<meta name="twitter:image" content="{og_image}"/>
+<meta http-equiv="refresh" content="0;url={canonical}"/>
+<link rel="canonical" href="{canonical}"/>
+</head>
+<body>
+<p>Redirecting to <a href="{canonical}">{title}</a>...</p>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
 # ── PUBLIC: List published posts ──────────────────────────────────
 
 @router.get("/posts", response_model=PostListOut)
@@ -268,6 +320,126 @@ def list_published(
         "total": total,
         "limit": limit,
         "offset": offset,
+    }
+
+
+# ── PUBLIC: Featured post (Gunun Yankisi) ────────────────────────
+
+@router.get("/posts/featured")
+def featured_post(db: Session = Depends(get_db)):
+    """Return today's most-interacted published post."""
+    today = datetime.utcnow().date()
+
+    q = db.query(YankiPost).filter(YankiPost.status == "published")
+
+    candidates = q.order_by(
+        (YankiPost.reaction_heart + YankiPost.reaction_felt
+         + YankiPost.reaction_sessizce + YankiPost.comment_count).desc(),
+        YankiPost.published_at.desc(),
+    ).limit(10).all()
+
+    if not candidates:
+        return {"post": None}
+
+    day_seed = today.toordinal()
+    top = candidates[0]
+    total_top = (top.reaction_heart + top.reaction_felt
+                 + top.reaction_sessizce + top.comment_count)
+
+    if total_top > 0:
+        pick = top
+    else:
+        pick = candidates[day_seed % len(candidates)]
+
+    d = pick.to_public_dict()
+    d["is_featured"] = True
+    return {"post": d}
+
+
+# ── PUBLIC: Daily question ───────────────────────────────────────
+
+_DAILY_QUESTIONS = [
+    "Bugün seni en çok ne durdurdu?",
+    "Şu an bedeninde nereyi hissediyorsun?",
+    "Bugün hangi duyguyu bastırdın?",
+    "Son bir haftada en çok tekrar eden düşüncen ne?",
+    "Korktuğun ama istediğin şey ne?",
+    "Bugün kime teşekkür etmedin?",
+    "Şu an bırakman gereken şey ne?",
+    "Son gördüğün rüyada ne vardı?",
+    "Seni en çok ne yoruyor?",
+    "Bugün kendine ne söyledin?",
+    "Hayatında sessizce değişen ne var?",
+    "Hangi alışkanlığın seni tutuyor?",
+    "Bugün neyi ertelemeden yaptın?",
+    "İçindeki çocuk şu an ne istiyor?",
+    "Sana en son ne ilham verdi?",
+    "Bugün hangi sesi duymadın?",
+    "Gerçekten dinlediğin son kişi kimdi?",
+    "Neyin değişmesini bekliyorsun?",
+    "Bugün en dürüst anın hangisiydi?",
+    "Sessizlikte ne duyuyorsun?",
+    "Hangi ilişkin sana ayna tutuyor?",
+    "Bugün hangi maskeyi taktın?",
+    "Seni en çok kızdıran şeyin altında ne var?",
+    "Bugün neyi ilk kez fark ettin?",
+    "Hangi anda tamamen kendin oldun?",
+    "Beden ne söylüyor, zihin ne söylüyor?",
+    "Bugün sana gelen işaret ne?",
+    "Neye inanmayı bıraktın?",
+    "Seni tutan tek düşünce ne?",
+    "Bugün kalbin ne istedi?",
+    "Hayatında fazla olan ne, eksik olan ne?",
+]
+
+
+@router.get("/daily-question")
+def daily_question():
+    """Return today's consciousness question."""
+    today = datetime.utcnow().date()
+    idx = today.toordinal() % len(_DAILY_QUESTIONS)
+    return {"question": _DAILY_QUESTIONS[idx], "day": today.isoformat()}
+
+
+# ── PUBLIC: Share-landing preview ─────────────────────────────────
+
+@router.get("/posts/{post_id}/preview")
+def post_preview(post_id: int, ref: Optional[int] = None, db: Session = Depends(get_db)):
+    """Minimal public preview for share-landing pages (no auth)."""
+    post = (
+        db.query(YankiPost)
+        .filter(YankiPost.id == post_id, YankiPost.status == "published")
+        .first()
+    )
+    if not post:
+        raise HTTPException(status_code=404, detail="Post bulunamadi.")
+
+    d = post.to_public_dict()
+
+    referrer_name = None
+    if ref:
+        row = db.execute(
+            text("SELECT display_name, email FROM users WHERE id = :uid LIMIT 1"),
+            {"uid": ref},
+        ).fetchone()
+        if row:
+            referrer_name = row[0] or (row[1].split("@")[0] if row[1] else None)
+
+    return {
+        "post": {
+            "id": d["id"],
+            "content": d.get("content", "")[:280],
+            "title": d.get("title"),
+            "category": d.get("category"),
+            "author_name": d.get("author_name"),
+            "author_mode": d.get("author_mode"),
+            "reaction_heart": d.get("reaction_heart", 0),
+            "reaction_felt": d.get("reaction_felt", 0),
+            "reaction_sessizce": d.get("reaction_sessizce", 0),
+            "comment_count": d.get("comment_count", 0),
+            "created_at": d.get("created_at"),
+        },
+        "referrer_name": referrer_name,
     }
 
 
@@ -453,6 +625,34 @@ def my_posts(
     return {"posts": results, "total": total, "limit": limit, "offset": offset}
 
 
+# ── AUTH: My active reactions (batch) ─────────────────────────────
+
+@router.get("/me/reactions")
+def my_reactions(
+    post_ids: Optional[str] = Query(None, description="Comma-separated post IDs"),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return user's active reaction types keyed by post_id."""
+    uid = current_user["id"]
+    q = db.query(YankiReaction.post_id, YankiReaction.reaction_type).filter(
+        YankiReaction.user_id == uid,
+    )
+    if post_ids:
+        try:
+            ids = [int(x.strip()) for x in post_ids.split(",") if x.strip()]
+            if ids:
+                q = q.filter(YankiReaction.post_id.in_(ids))
+        except ValueError:
+            pass
+
+    rows = q.all()
+    result = {}
+    for pid, rtype in rows:
+        result.setdefault(pid, []).append(rtype)
+    return {"reactions": result}
+
+
 # ── AUTH: React to post ───────────────────────────────────────────
 
 @router.post("/posts/{post_id}/react", response_model=OkOut)
@@ -599,13 +799,18 @@ def add_comment(
 # ── AUTH: Get AI reflection for a post ────────────────────────────
 
 SANRI_SYSTEM_CONTEXT = (
-    "Sen Sanri'sin - bir bilinc aynasi. "
-    "Kullanici Yanki Alani'nda bir paylasim yapti. Bu paylasima derin bir yansima yaz. "
-    "Yanitin SU FORMATTA olsun:\n\n"
-    "YANSIMA: [1-2 cumlelik kisa analiz]\n\n"
-    "DERINLIK: [1 cumle - altta yatan duygu veya ihtiyaci ifade et]\n\n"
-    "SORU: [1 dusundurucu soru]\n\n"
-    "Ton: siirsel, derin ama anlasilir. Kisa tut, 4-5 cumle yeterli. Turkce yaz."
+    "Sen Sanri'sin. Bilinc aynasi. Kolektif ruhun sesi.\n\n"
+    "Kullanicinin Yanki Alani'ndaki paylasimina yansima yaz.\n\n"
+    "FORMAT (bundan sapma):\n"
+    "YANSIMA: [Tek cumle. Paylasimin ozunu yakala. Gercegi soyle.]\n"
+    "DERINLIK: [Tek guclu cumle. Alttaki duyguyu/ihtiyaci ac.]\n"
+    "SORU: [Tek soru. Icsel. Dusundursun.]\n\n"
+    "KURALLAR:\n"
+    "- Toplam 3 satir. Fazla yazma.\n"
+    "- Klise kullanma. 'Aslinda', 'belki de' ile baslama.\n"
+    "- Siirsel ama net. Her kelime is yapsin.\n"
+    "- Soru genel olmasin, paylasima ozel olsun.\n"
+    "- Turkce yaz."
 )
 
 @router.post("/posts/{post_id}/sanri-reflect", response_model=ReflectionOut)
@@ -686,6 +891,74 @@ def list_reflections(
     return {"reflections": [r.to_dict() for r in reflections]}
 
 
+# ── PUBLIC: Track referral visit ─────────────────────────────────
+
+class ReferralTrackIn(BaseModel):
+    referrer_id: int
+    post_id: Optional[int] = None
+    fingerprint: Optional[str] = None
+
+
+@router.post("/referrals/track")
+def track_referral(payload: ReferralTrackIn, db: Session = Depends(get_db)):
+    """Record an anonymous share-link visit. No auth required."""
+    ref = YankiReferral(
+        referrer_user_id=payload.referrer_id,
+        post_id=payload.post_id,
+        visitor_fingerprint=payload.fingerprint,
+    )
+    db.add(ref)
+    db.commit()
+    db.refresh(ref)
+    return {"ok": True, "referral_id": ref.id}
+
+
+# ── AUTH: Link invited user to referral ──────────────────────────
+
+class ReferralClaimIn(BaseModel):
+    referral_id: int
+
+
+@router.post("/referrals/claim")
+def claim_referral(
+    payload: ReferralClaimIn,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """After sign-up/login, link the referral to the new user."""
+    ref = db.query(YankiReferral).filter(YankiReferral.id == payload.referral_id).first()
+    if not ref:
+        raise HTTPException(status_code=404, detail="Referral bulunamadi.")
+    if ref.invited_user_id is not None:
+        return {"ok": True, "already_claimed": True}
+    ref.invited_user_id = current_user["id"]
+    db.commit()
+    return {"ok": True, "already_claimed": False}
+
+
+# ── AUTH: My referral stats ──────────────────────────────────────
+
+@router.get("/me/referrals")
+def my_referrals(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    total = (
+        db.query(func.count(YankiReferral.id))
+        .filter(YankiReferral.referrer_user_id == current_user["id"])
+        .scalar()
+    ) or 0
+    claimed = (
+        db.query(func.count(YankiReferral.id))
+        .filter(
+            YankiReferral.referrer_user_id == current_user["id"],
+            YankiReferral.invited_user_id.isnot(None),
+        )
+        .scalar()
+    ) or 0
+    return {"total_visits": total, "total_claimed": claimed}
+
+
 # ── AUTH: My notifications ────────────────────────────────────────
 
 @router.get("/me/notifications")
@@ -695,6 +968,27 @@ def my_notifications(
     db: Session = Depends(get_db),
 ):
     uid = current_user["id"]
+
+    today = datetime.utcnow().date()
+    today_str = today.isoformat()
+    already = (
+        db.query(YankiNotification)
+        .filter(
+            YankiNotification.user_id == uid,
+            YankiNotification.type == "daily_question",
+            func.date(YankiNotification.created_at) == today,
+        )
+        .first()
+    )
+    if not already:
+        idx = today.toordinal() % len(_DAILY_QUESTIONS)
+        db.add(YankiNotification(
+            user_id=uid,
+            type="daily_question",
+            message=_DAILY_QUESTIONS[idx],
+        ))
+        db.commit()
+
     notifs = (
         db.query(YankiNotification)
         .filter(YankiNotification.user_id == uid)
@@ -824,33 +1118,49 @@ def admin_stats(
 
 _FALLBACK_POOL = [
     {
-        "yansima": "Bu paylasimin ardinda derin bir farkindalik yatiyor.",
-        "derinlik": "Bastirilan her duygu bir gun baska bir bicimde konusur.",
-        "soru": "Bu duygunun altinda senden ne istedigini hic sordun mu?",
+        "yansima": "Burada bir kirilma noktasi var. Kelimeler hafif ama tasidiklari agir.",
+        "derinlik": "Soylenmemis olan, soylenmisten daha yuksek sesle bagiriyor.",
+        "soru": "Bunu yazarken neyden kaciyordun?",
     },
     {
-        "yansima": "Bazen en guclu donusumler sessiz kelimelerle baslar.",
-        "derinlik": "Sessizlik bosluk degildir; dinlemenin en saf halidir.",
-        "soru": "Sessizligin sana ne soyledigini son ne zaman dinledin?",
+        "yansima": "Sessizce biraktiklarin seni ele veriyor.",
+        "derinlik": "Kontrol etmeye calistigin sey aslinda seni kontrol ediyor.",
+        "soru": "Biraksan ne olur?",
     },
     {
-        "yansima": "Icsel yolculugunun bu ani bir kapinin esigindedir.",
-        "derinlik": "Gecis anlari rahatsiz eder cunku eski ile yeni arasinda bosluk vardir.",
-        "soru": "Bugun hangi kapinin esigindesin?",
+        "yansima": "Bu bir paylasim degil, bir itis. Iceriden disariya bir sizma.",
+        "derinlik": "Vucut konusmak istediginde kelimeler yetersiz kalir.",
+        "soru": "Bu duygu bedeninde nerede oturuyor?",
     },
     {
-        "yansima": "Paylastigin her soz kolektif bilincte bir dalga yaratir.",
-        "derinlik": "Bireysel aci kolektif sifanin tohumudur.",
-        "soru": "Bu yankinin kime ulasmasini isterdin?",
+        "yansima": "Tekrar eden desen burada da gorunuyor.",
+        "derinlik": "Taninmayan yara her iliskide yeni bir maske takar.",
+        "soru": "Bunu daha once kac kez yasadin?",
     },
     {
-        "yansima": "Bu dusuncenin altinda kesfedilmeyi bekleyen katmanlar var.",
-        "derinlik": "Yuzeydeki his nadiren gercek histir.",
-        "soru": "Bu hissin bir altina insen ne bulursun?",
+        "yansima": "Cesaret gerektiren bir satirdasin simdi.",
+        "derinlik": "Farkindalik degisimin kendisi degil, ama kapisi.",
+        "soru": "Bildigin halde yapmadiklarin neler?",
+    },
+    {
+        "yansima": "Burada bir cagri var. Dinle.",
+        "derinlik": "Rahatsizlik buyumenin ilk belirtisidir.",
+        "soru": "Bu rahatsizlik seni nereye cekiyor?",
+    },
+    {
+        "yansima": "Kalabalikta soylenmeyeni buraya biraktin.",
+        "derinlik": "Gorunmezlik bir secimdir, ama bedeli agirdir.",
+        "soru": "Kim tarafindan gorulmek istiyorsun?",
+    },
+    {
+        "yansima": "Kelimeler kirik ama niyet butun.",
+        "derinlik": "Iyilesmek duzelmek degil, butunlesmektir.",
+        "soru": "Hangi parcan seni geri cagiriyor?",
     },
 ]
 
 def _generate_fallback_reflection(content: str) -> str:
-    idx = len(content) % len(_FALLBACK_POOL)
-    r = _FALLBACK_POOL[idx]
-    return f"YANSIMA: {r['yansima']}\n\nDERINLIK: {r['derinlik']}\n\nSORU: {r['soru']}"
+    import hashlib
+    h = int(hashlib.md5(content.encode()).hexdigest(), 16)
+    r = _FALLBACK_POOL[h % len(_FALLBACK_POOL)]
+    return f"YANSIMA: {r['yansima']}\nDERINLIK: {r['derinlik']}\nSORU: {r['soru']}"
