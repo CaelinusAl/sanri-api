@@ -27,12 +27,14 @@ class User(Base):
     # premium subscription
     is_premium = Column(Boolean, default=False, nullable=False)
     premium_until = Column(DateTime, nullable=True)
-    premium_source = Column(String, nullable=True) # apple / google / admin
+    premium_source = Column(String, nullable=True)  # stripe / revenuecat / admin
+    stripe_customer_id = Column(String, nullable=True, unique=True, index=True)
     apple_product_id = Column(String, nullable=True)
     apple_original_transaction_id = Column(String, nullable=True, index=True)
 
     # tek seferlik kilit açma
     matrix_role_unlocked = Column(Boolean, default=False, nullable=False)
+    free_unlock_used = Column(Boolean, default=False, nullable=False)
 
     # kullanım / aktivite
     last_matrix_deep_analysis = Column(DateTime, nullable=True)
