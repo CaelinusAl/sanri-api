@@ -46,6 +46,7 @@ from app.routes.awakened_content import router as awakened_content_router
 from app.routes.yanki import router as yanki_router
 from app.routes.billing import router as billing_router
 from app.routes.iyzico import router as iyzico_router
+from app.routes.pageview import router as pageview_router
 
 
 
@@ -157,3 +158,4 @@ app.include_router(awakened_content_router)
 app.include_router(yanki_router)
 app.include_router(billing_router)
 app.include_router(iyzico_router)
+app.include_router(pageview_router)
