@@ -208,6 +208,7 @@ class RecordPurchaseBody(BaseModel):
     product_id: Optional[str] = None
     device_fp: Optional[str] = None
     amount: Optional[float] = None
+    timestamp: Optional[str] = None
 
 @router.post("/record")
 def record_purchase(
@@ -235,22 +236,25 @@ def record_purchase(
     """), {"cid": body.content_id, "fp": body.device_fp or "", "uid": user_id or 0}).first()
 
     if existing:
-        return {"ok": True, "action": "already_recorded"}
+        return {"ok": True, "action": "already_recorded", "content_id": body.content_id}
 
     db.execute(sa_text("""
         INSERT INTO shopier_purchases
-            (content_id, product_id, device_fp, user_id, amount, source, status)
+            (content_id, product_id, device_fp, user_id, amount, source, status, metadata_json)
         VALUES
-            (:cid, :pid, :fp, :uid, :amount, 'frontend', 'completed')
+            (:cid, :pid, :fp, :uid, :amount, 'frontend', 'completed', :meta)
     """), {
         "cid": body.content_id,
         "pid": body.product_id or "",
         "fp": body.device_fp or "",
         "uid": user_id,
         "amount": body.amount or 0,
+        "meta": json.dumps({"timestamp": body.timestamp, "ip": request.headers.get("x-forwarded-for", "")}),
     })
     db.commit()
-    return {"ok": True, "action": "recorded"}
+
+    logger.info(f"Purchase recorded: {body.content_id} fp={body.device_fp} uid={user_id}")
+    return {"ok": True, "action": "recorded", "content_id": body.content_id}
 
 
 # ═══════════════════════════════════════════════════════════════
