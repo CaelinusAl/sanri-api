@@ -50,6 +50,7 @@ from app.routes.pageview import router as pageview_router
 from app.routes.okuma_interactions import router as okuma_interactions_router
 from app.routes.sanri_analyze import router as sanri_analyze_router
 from app.routes.funnel import router as funnel_router
+from app.routes.shopier_purchases import router as shopier_purchases_router
 
 
 
@@ -165,3 +166,4 @@ app.include_router(pageview_router)
 app.include_router(okuma_interactions_router)
 app.include_router(sanri_analyze_router)
 app.include_router(funnel_router)
+app.include_router(shopier_purchases_router)
