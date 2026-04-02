@@ -1304,8 +1304,12 @@ def seed_initial_posts(
         raise HTTPException(status_code=403, detail="Valid seed_key required")
 
     existing = db.query(YankiPost).count()
-    if existing >= 10:
+    if existing >= 40:
         return {"ok": True, "message": f"Already has {existing} posts, skipping seed.", "seeded": 0}
+
+    existing_contents = set()
+    for row in db.query(YankiPost.content_raw).all():
+        existing_contents.add(row[0][:50] if row[0] else "")
 
     import random
     from datetime import timedelta
@@ -1314,6 +1318,9 @@ def seed_initial_posts(
     seeded = 0
 
     for i, seed in enumerate(_SEED_POSTS):
+        if seed["content"][:50] in existing_contents:
+            continue
+
         offset_hours = random.randint(1, 72)
         created = now - timedelta(hours=offset_hours, minutes=random.randint(0, 59))
 
