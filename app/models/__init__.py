@@ -7,3 +7,4 @@ from .sanri_reflection import SanriReflection  # noqa: F401
 from .notification import YankiNotification  # noqa: F401
 from .referral import YankiReferral  # noqa: F401
 from .billing import Subscription, Purchase, ContentUnlock, UserEntitlement  # noqa: F401
+from .funnel_event import FunnelEvent  # noqa: F401

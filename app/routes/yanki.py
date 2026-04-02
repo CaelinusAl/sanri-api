@@ -1290,6 +1290,127 @@ _SEED_POSTS = [
         "category": "farkindalik",
         "content": "Herkes 'kendini sev' diyor ama kimse 'kendini tanı' demiyor. Tanımadan sevmek sadece bir kavram.",
     },
+    # ── Wave 2: April fresh content ──
+    {
+        "category": "duygu",
+        "content": "Uzun zamandır ağlamıyordum. Bugün bir şarkı açtı. İyi geldi. Hissetmeyi unutmuşum.",
+        "sanri_note": "Gözyaşı zayıflık değil — çözülme. Uzun süredir tuttuğun bir şey akmaya başladı.",
+    },
+    {
+        "category": "farkindalik",
+        "title": "Frekans değişimi",
+        "content": "Bazı insanlarla konuştuktan sonra enerjim düşüyor. Bunu fark etmeye başladım. Artık herkesle aynı süre geçirmiyorum.",
+        "sanri_note": "Frekans korunması bilinçli bir seçimdir. Kiminle vakit geçirdiğin, nasıl hissettiğini belirler.",
+    },
+    {
+        "category": "donusum",
+        "content": "1 yıl önce yazdığım günlüğü okudum. O insan ben miydim? Değiştiğimi biliyordum ama bu kadarını değil.",
+    },
+    {
+        "category": "soru",
+        "content": "Kendi sesinizi nasıl buldunuz? Ben hâlâ 'doğru olan ne' diye dışarıya bakıyorum. İçerideki sesi duymayı çok istiyorum.",
+    },
+    {
+        "category": "ruya",
+        "title": "Denizaltı rüyası",
+        "content": "Rüyamda suyun altındaydım ama nefes alabiliyordum. Korku yoktu, sadece sessizlik. Orada kalmak istedim.",
+        "sanri_note": "Su bilinçdışını temsil eder. Suyun altında nefes almak bilinçdışıyla barış kurmaktır.",
+    },
+    {
+        "category": "gunluk_akis",
+        "content": "Bugün ilk kez meditasyon sırasında hiçbir şey düşünmedim. 3 saniye sürdü. Ama o 3 saniye sonsuzluk gibiydi.",
+    },
+    {
+        "category": "isaret",
+        "content": "Son 3 gündür her yerde baykuş görüyorum. Kupa, tişört, reklam. Baykuş bilgelik mi, uyarı mı? Ne dersiniz?",
+    },
+    {
+        "category": "duygu",
+        "title": "Sessiz öfke",
+        "content": "Öfkelendiğimde sustum hep. Şimdi anlıyorum: susmak barış değilmiş. Bastırmakmış. Sesim çıkmayı hak ediyor.",
+        "sanri_note": "Bastırılmış öfke en derin yaralardan birini taşır. Onu duymak iyileşmenin başlangıcıdır.",
+    },
+    {
+        "category": "farkindalik",
+        "content": "İnsanlara 'iyiyim' derken gerçekten iyi olmadığımı fark ettim. Alışkanlık bu. Artık dürüst olmayı deniyorum.",
+    },
+    {
+        "category": "donusum",
+        "title": "Eski ben, yeni ben",
+        "content": "Eski fotoğraflarıma baktım. Gözlerimin farklı olduğunu gördüm. Eskiden bakıyordum. Şimdi görüyorum. Aradaki fark devasa.",
+        "sanri_note": "Bakmak ile görmek arasında bir uçurum var. Bu uçurumu geçtiğini fark etmen bile bir açılımdır.",
+    },
+    {
+        "category": "ruya",
+        "content": "Rüyamda bir çölde yürüyordum. Susamıştım ama su aramadım. Çünkü çölün kendisi öğretiyordu bir şeyler. Uyanınca anladım: eksiklik de bir öğretmendir.",
+    },
+    {
+        "category": "soru",
+        "content": "Tekrar eden rüyalar gören var mı? Ben 5 yıldır aynı merdiveni çıkıyorum. Hiç en üste ulaşamıyorum.",
+        "sanri_note": "Tekrar eden rüya tamamlanmamış bir döngünün sesidir. Merdiven yükselme arzusu, ulaşamama ise bir engel kalıbı.",
+    },
+    {
+        "category": "duygu",
+        "content": "Annem aradığında artık 'iyi misin' diye sormuyorum. Sadece dinliyorum. Ve bu sessizlik ikimizi de iyileştiriyor.",
+    },
+    {
+        "category": "gunluk_akis",
+        "title": "Dijital detoks",
+        "content": "Telefonu 2 saat bıraktım. İlk 30 dakika cehennem. Sonra? Dünya daha yavaş, daha renkli, daha gerçek. Bağımlılık fark edilince çözülüyor.",
+    },
+    {
+        "category": "farkindalik",
+        "content": "Hep 'bir gün yapacağım' diyordum. Bugün o 'bir gün'ün asla gelmeyeceğini anladım. Ya şimdi ya asla.",
+        "sanri_note": "'Bir gün' en tehlikeli ertelemedir. Çünkü umut verir ama hareket vermez.",
+    },
+    {
+        "category": "isaret",
+        "title": "Çiçek açtı",
+        "content": "Penceredeki bitkimi öldü sanıyordum. Bugün yeni bir yaprak çıkarmış. Tamamen bitmemiş demek. Ben de öyleyim belki.",
+        "sanri_note": "Doğa her zaman devam eder. Ve sen de doğanın bir parçasısın. Kurumuş gibi görünen dalda hayat birikir.",
+    },
+    {
+        "category": "duygu",
+        "content": "İlk kez 'hayır' dedim ve dünya yıkılmadı. Aksine içimde bir şey yerine oturdu. Sınır = sevgi.",
+    },
+    {
+        "category": "donusum",
+        "content": "Terapiste gitmekten utanıyordum. Bugün 6. seanstı. Utanç gitti, cesaret geldi. Yardım istemek güçtür.",
+        "sanri_note": "Yardım istemek teslim olmak değil — kendine yatırım yapmaktır. Bu adımı atmak cesaret ister.",
+    },
+    {
+        "category": "soru",
+        "content": "Sezgilerinize güveniyor musunuz? Ben mantığımla sezgim çatıştığında hep mantığı seçtim. Ve hep pişman oldum.",
+    },
+    {
+        "category": "gunluk_akis",
+        "content": "Sabah güneş vurunca gözlerimi kapattım ve 1 dakika öylece durdum. O 1 dakika bugünün en güzel anıydı.",
+    },
+    {
+        "category": "farkindalik",
+        "title": "Maske düştü",
+        "content": "Güçlü görünmeyi bıraktığım gün gerçek gücümü buldum. Kırılganlık zayıflık değilmiş. İnsanlıkmış.",
+        "sanri_note": "Maske taşımak enerji harcar. Maskesiz kalmak cesaret ister ama özgürleştirir.",
+    },
+    {
+        "category": "ruya",
+        "title": "Sonsuz oda",
+        "content": "Rüyamda bir odadaydım. Kapıyı açtığımda aynı oda. Tekrar açtım, yine aynı. Ama her seferinde bir şey farklıydı. Sonunda anladım: oda değişmiyor, ben değişiyorum.",
+        "sanri_note": "Aynı odayı farklı görmek bilincin genişlediğinin işaretidir. Döngü senin için dönüyor.",
+    },
+    {
+        "category": "duygu",
+        "content": "Birinin seni anlamasını beklemekten vazgeçtiğin an kendini anlamaya başlıyorsun. Bugün bu oldu.",
+    },
+    {
+        "category": "isaret",
+        "content": "Bu hafta 3 farklı kişi bağımsız olarak 'değişim' kelimesini kullandı. Evrenin dili tekrardır. Dinliyorum.",
+        "sanri_note": "Tekrar eden kelimeler, sayılar, olaylar — evrenin dikkat çekme yöntemidir. Fark ettin, bu yeterli.",
+    },
+    {
+        "category": "donusum",
+        "content": "Geçen yıl 'bunu asla yapamam' dediğim şeyi bugün yaptım. Ve dünya yıkılmadı. Limitler gerçek değilmiş. Zihinsel kuralarmış.",
+    },
 ]
 
 
@@ -1304,7 +1425,7 @@ def seed_initial_posts(
         raise HTTPException(status_code=403, detail="Valid seed_key required")
 
     existing = db.query(YankiPost).count()
-    if existing >= 40:
+    if existing >= 80:
         return {"ok": True, "message": f"Already has {existing} posts, skipping seed.", "seeded": 0}
 
     existing_contents = set()
