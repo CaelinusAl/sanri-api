@@ -1167,3 +1167,173 @@ def _generate_fallback_reflection(content: str) -> str:
     h = int(hashlib.md5(content.encode()).hexdigest(), 16)
     r = _FALLBACK_POOL[h % len(_FALLBACK_POOL)]
     return f"YANSIMA: {r['yansima']}\nDERINLIK: {r['derinlik']}\nSORU: {r['soru']}"
+
+
+# ── ADMIN: Seed initial posts ─────────────────────────────────────
+
+_SEED_POSTS = [
+    {
+        "category": "duygu",
+        "content": "Bugün içimde bir sıkışma vardı. Kaçmak yerine baktım. İlginç olan şu: baktıkça yumuşadı. Bazen iyileşmek çözmekten önce sadece görmeyi istiyor.",
+        "sanri_note": "Görmek çözmenin ilk adımıdır. Ama çoğu insan görmeden çözmeye çalışır.",
+    },
+    {
+        "category": "farkindalik",
+        "title": "Kontrol ve Teslim",
+        "content": "Kontrol etmeye çalıştığım her şey beni sertleştiriyor. Bıraktığım her şey ise bana geri akıyor. Bugün bunu bedenimde fark ettim.",
+        "sanri_note": "Teslim güçsüzlük değil — güvendir. Bu farkındalık önemli bir eşik.",
+    },
+    {
+        "category": "ruya",
+        "title": "Mavi kapı",
+        "content": "Rüyamda mavi bir kapı gördüm. Açınca içerisi boştu ama korkutucu değil, çok sakindi. Sanki bana 'boşluk da bir cevaptır' diyordu.",
+        "sanri_note": "Boşluk korkulacak değil dinlenecek bir alan. Rüya sana alan açıyor.",
+    },
+    {
+        "category": "duygu",
+        "content": "Kimseye söyleyemediğim bir şey var. Burada bırakıyorum. Ağırlaştırmak istemiyorum artık.",
+    },
+    {
+        "category": "isaret",
+        "title": "11:11",
+        "content": "Bu hafta her gün 11:11'de saate baktım. Tesadüf değil. Evren konuşuyor. Ben dinliyorum.",
+    },
+    {
+        "category": "soru",
+        "content": "Gölge çalışması yapanlar: en çok ne zaman tetikleniyorsunuz? Bende yakın ilişkilerde patlıyor.",
+    },
+    {
+        "category": "farkindalik",
+        "title": "Nefes = Şimdi",
+        "content": "Nefesimi takip ettiğim her an, geçmiş ve gelecek kayboluyor. Geriye sadece bu an kalıyor. Bu kadar basit.",
+        "sanri_note": "Nefes şimdiki anın kapısıdır. Bu farkındalığı günlük ritüele dönüştür.",
+    },
+    {
+        "category": "gunluk_akis",
+        "content": "Sabah kalktım, ilk düşüncem: 'yeterliyim.' Bu cümle her şeyi değiştirdi.",
+    },
+    {
+        "category": "ruya",
+        "content": "Rüyamda uçuyordum ama yükselmedim. Yere paralel uçuyordum. Belki mesaj şu: yükselmek değil, akışta kalmak.",
+    },
+    {
+        "category": "isaret",
+        "title": "Kelebek",
+        "content": "Bugün üst üste 3 kelebek gördüm. Anneannem hep 'kelebekler mesaj taşır' derdi. Dinliyorum.",
+    },
+    {
+        "category": "duygu",
+        "title": "Yalnızlık ve Bütünlük",
+        "content": "Yalnızlık hissettiğimde kendimden koptuğumu fark ettim. Başkalarından değil. Kendimle bağ kurunca yalnızlık çözülüyor.",
+        "sanri_note": "Yalnızlık dışarıda değil içeride çözülür. Bu güçlü bir farkındalık.",
+    },
+    {
+        "category": "gunluk_akis",
+        "content": "Bugün hiçbir şey yapmadım ve suçluluk duymadım. Bu bir zafer.",
+    },
+    {
+        "category": "soru",
+        "content": "İçinizden gelen sesleri nasıl ayırt ediyorsunuz? Hangisi korku, hangisi sezgi? Bazen karıştırıyorum.",
+    },
+    {
+        "category": "farkindalik",
+        "content": "Affetmek karşıdaki için değilmiş. Kendim için taşıdığım yükü bırakmak için. Bugün bunu yaşadım.",
+    },
+    {
+        "category": "gunluk_akis",
+        "content": "3 dakika nefes çalışması yaptım. Dünya durdu. Sonra geri döndü. Ama ben aynı değildim.",
+    },
+    {
+        "category": "duygu",
+        "content": "Birini özlemek bazen ona dönmek istemek değilmiş. İçimde onunla açılan tarafı kaybetmekten korkmakmış.",
+        "sanri_note": "Özlem kişiye değil, o kişiyle açılan kendinize. Bu ayrımı görmek özgürleştirir.",
+    },
+    {
+        "category": "farkindalik",
+        "title": "Yavaşlık",
+        "content": "Hızlı olduğumda güçlü olduğumu sanıyordum. Oysa yavaşladığımda ne hissettiğimi ilk kez duymaya başladım.",
+    },
+    {
+        "category": "donusum",
+        "content": "Eskiden 'güçlü olmak' duygularımı bastırmak demekti. Şimdi güçlü olmak onları hissetmek demek. Bu değişim sessizce oldu.",
+        "sanri_note": "Gerçek güç duyguyu bastırmakta değil taşımakta. Sessiz dönüşümler en kalıcı olanlardır.",
+    },
+    {
+        "category": "isaret",
+        "content": "Bugün bir kitap rastgele açtım, tam ihtiyacım olan cümle çıktı. Tesadüf diyemiyorum artık.",
+    },
+    {
+        "category": "ruya",
+        "title": "Ayna rüyası",
+        "content": "Rüyamda aynaya baktım ama yansımam yoktu. Korkutucu değildi, aksine rahatlatıcıydı. Kimliksiz olmak... hafifti.",
+        "sanri_note": "Aynada kaybolmak benlikten arınmak olabilir. Rüya sana 'maskesiz de varsın' diyor.",
+    },
+    {
+        "category": "duygu",
+        "content": "Ağlamak istedim ama çıkmadı. Bazen en büyük acı ifade edilemeyen acıdır.",
+    },
+    {
+        "category": "soru",
+        "title": "Gerçekten ne istiyorum?",
+        "content": "İstek sandığım şeyler aslında başkalarının beklentisi çıkıyor. Kendi iç sesimi başkalarının sesi olmadan nasıl duyarım?",
+    },
+    {
+        "category": "gunluk_akis",
+        "content": "Bugün çok basit bir şey yaptım: kahvemi içerken telefona bakmadım. Küçük bir an gibi durdu ama günün ilk gerçek teması oydu.",
+    },
+    {
+        "category": "donusum",
+        "content": "Sınırlarımı koymaya başladığımda bazı insanlar uzaklaştı. Acıttı. Ama geriye kalanlar gerçekti.",
+        "sanri_note": "Sınır koymak sevgiyi azaltmaz, gerçeği ortaya çıkarır.",
+    },
+    {
+        "category": "farkindalik",
+        "content": "Herkes 'kendini sev' diyor ama kimse 'kendini tanı' demiyor. Tanımadan sevmek sadece bir kavram.",
+    },
+]
+
+
+@router.post("/admin/seed")
+def seed_initial_posts(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Populate the DB with initial Yankı posts. Admin only. Idempotent."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    existing = db.query(YankiPost).count()
+    if existing >= 10:
+        return {"ok": True, "message": f"Already has {existing} posts, skipping seed.", "seeded": 0}
+
+    import random
+    from datetime import timedelta
+
+    now = datetime.utcnow()
+    seeded = 0
+
+    for i, seed in enumerate(_SEED_POSTS):
+        offset_hours = random.randint(1, 72)
+        created = now - timedelta(hours=offset_hours, minutes=random.randint(0, 59))
+
+        post = YankiPost(
+            user_id=current_user["id"],
+            author_mode="anonymous",
+            title=seed.get("title"),
+            content_raw=seed["content"],
+            content_sanitized=seed["content"],
+            category=seed["category"],
+            sanri_note=seed.get("sanri_note"),
+            status="published",
+            reaction_heart=random.randint(3, 35),
+            reaction_felt=random.randint(1, 20),
+            reaction_sessizce=random.randint(0, 12),
+            comment_count=random.randint(0, 8),
+            created_at=created,
+            published_at=created,
+        )
+        db.add(post)
+        seeded += 1
+
+    db.commit()
+    return {"ok": True, "message": f"Seeded {seeded} posts.", "seeded": seeded}
