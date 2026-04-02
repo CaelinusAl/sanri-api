@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -210,8 +210,17 @@ def _emit_notification(db: Session, user_id: int, notif_type: str, post_id: int,
 
 def _update_streak(db: Session, user_id: int):
     from app.models.user import User
-    import datetime as dt
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Europe/Istanbul")
+        today_local = datetime.now(tz).date()
+    except Exception:
+        today_local = datetime.utcnow().date()
+
+    today_str = today_local.strftime("%Y-%m-%d")
+    yesterday_str = (today_local - timedelta(days=1)).strftime("%Y-%m-%d")
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return
@@ -219,8 +228,6 @@ def _update_streak(db: Session, user_id: int):
     last = getattr(user, "last_active_date", None)
     if last == today_str:
         return
-
-    yesterday_str = (datetime.utcnow().date() - dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
     current = getattr(user, "current_streak", 0) or 0
     longest = getattr(user, "longest_streak", 0) or 0
@@ -513,6 +520,11 @@ def my_profile(
     uid = current_user["id"]
 
     from app.models.user import User
+
+    # Streak: günlük aktivite = alanı açmak da sayılır (sadece Yankı yazınca artmasın)
+    _update_streak(db, uid)
+    db.commit()
+
     user = db.query(User).filter(User.id == uid).first()
 
     post_count = db.query(YankiPost).filter(YankiPost.user_id == uid).count()
