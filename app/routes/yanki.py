@@ -1295,12 +1295,13 @@ _SEED_POSTS = [
 
 @router.post("/admin/seed")
 def seed_initial_posts(
-    current_user=Depends(get_current_user),
+    seed_key: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Populate the DB with initial Yankı posts. Admin only. Idempotent."""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+    """Populate the DB with initial Yankı posts. Requires seed_key. Idempotent."""
+    secret = os.getenv("YANKI_SEED_KEY", "sanri369seed")
+    if seed_key != secret:
+        raise HTTPException(status_code=403, detail="Valid seed_key required")
 
     existing = db.query(YankiPost).count()
     if existing >= 10:
@@ -1317,7 +1318,7 @@ def seed_initial_posts(
         created = now - timedelta(hours=offset_hours, minutes=random.randint(0, 59))
 
         post = YankiPost(
-            user_id=current_user["id"],
+            user_id=None,
             author_mode="anonymous",
             title=seed.get("title"),
             content_raw=seed["content"],
