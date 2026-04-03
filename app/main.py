@@ -53,6 +53,8 @@ from app.routes.sanri_analyze import router as sanri_analyze_router
 from app.routes.ankod_sanri import router as ankod_sanri_router
 from app.routes.funnel import router as funnel_router
 from app.routes.shopier_purchases import router as shopier_purchases_router
+from app.routes.bank_transfer import router as bank_transfer_router
+from app.routes.bank_transfer import admin_router as bank_transfer_admin_router
 from app.routes.kod_okuma import router as kod_okuma_router
 
 
@@ -172,4 +174,6 @@ app.include_router(sanri_analyze_router)
 app.include_router(ankod_sanri_router)
 app.include_router(funnel_router)
 app.include_router(shopier_purchases_router)
+app.include_router(bank_transfer_router)
+app.include_router(bank_transfer_admin_router)
 app.include_router(kod_okuma_router)

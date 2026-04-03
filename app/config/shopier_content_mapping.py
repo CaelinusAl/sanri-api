@@ -25,6 +25,7 @@ _log = logging.getLogger("shopier")
 # Shopier lineItem.productId (string) → SANRI content_id
 SHOPIER_PRODUCT_ID_TO_CONTENT: dict[str, str] = {
     "45812975": "role_unlock",  # ROL_OKUMA
+    "45786456": "kod_giris_ders",  # SANRI Kod Eğitmeni — Giriş Katmanı (47 TL)
     "45833965": "kod_egitmeni",  # KOD_OKUMA_SISTEMI
     "45813111": "ankod_unlock",  # AN_KOD (bilinçaltı aynı link — title kuralı ayırır)
     "45786667": "matrix_code",  # Matrix / İkra

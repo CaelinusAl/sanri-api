@@ -18,11 +18,10 @@ import logging
 import os
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sa_text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import IntegrityError
 
 from app.config.shopier_content_mapping import (
@@ -30,7 +29,11 @@ from app.config.shopier_content_mapping import (
     resolve_content_id_from_title_and_product,
 )
 from app.db import get_db, engine
-from app.services.shopier_rest import get_shopier_order
+from app.services.shopier_rest import (
+    get_shopier_order,
+    list_shopier_webhooks,
+    register_shopier_webhook,
+)
 
 logger = logging.getLogger("shopier")
 
@@ -40,6 +43,19 @@ WEBHOOK_TOKEN = os.getenv("SHOPIER_WEBHOOK_TOKEN", "")
 WEBHOOK_PLAIN_SECRET = os.getenv("SHOPIER_WEBHOOK_SECRET", "").strip()
 ADMIN_SECRET = os.getenv("SANRI_ADMIN_SECRET", "sanri_admin_369")
 SHOPIER_PAT = os.getenv("SHOPIER_PAT", "").strip()
+
+
+def _default_shopier_webhook_url() -> str:
+    """
+    Tam callback URL: SHOPIER_WEBHOOK_CALLBACK_URL veya SANRI_API_PUBLIC_URL + /shopier/webhook
+    """
+    explicit = os.getenv("SHOPIER_WEBHOOK_CALLBACK_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    base = os.getenv("SANRI_API_PUBLIC_URL", "").strip().rstrip("/")
+    if base:
+        return f"{base}/shopier/webhook"
+    return ""
 
 
 def _verify_shopier_signature(payload: bytes, signature: str) -> bool:
@@ -310,6 +326,12 @@ def _order_payment_status(order: dict) -> str:
 @router.post("/webhook")
 async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
+    cli = request.client.host if request.client else ""
+    logger.info(
+        "Shopier webhook: POST /shopier/webhook len=%s client=%s",
+        len(payload),
+        cli,
+    )
 
     if not _webhook_authorized(request, payload):
         logger.warning("Shopier webhook: unauthorized")
@@ -436,6 +458,145 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
             db.rollback()
 
     return {"received": True, "action": "stored"}
+
+
+class RegisterWebhookBody(BaseModel):
+    """İsteğe bağlı: url yoksa SANRI_API_PUBLIC_URL veya SHOPIER_WEBHOOK_CALLBACK_URL kullanılır."""
+
+    url: Optional[str] = None
+    event: str = "order.created"
+    list_after: bool = True
+
+
+# ═══════════════════════════════════════════════════════════════
+# POST /shopier/register-webhook — Shopier API ile webhook oluştur (PAT)
+# GEÇİCİ: GET /shopier/register-webhook?secret=... — tarayıcı testi (sonra kaldır)
+# ═══════════════════════════════════════════════════════════════
+
+
+async def _shopier_register_webhook_core(
+    body: RegisterWebhookBody,
+    admin_credential: Optional[str],
+) -> dict:
+    """
+    Shopier: POST https://api.shopier.com/v1/webhooks — Bearer SHOPIER_PAT
+    Admin: POST’ta X-Admin-Secret; GEÇİCİ GET’te query ?secret=
+    """
+    if admin_credential != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Admin access denied")
+
+    target = (body.url or "").strip() or _default_shopier_webhook_url()
+    if not target:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing webhook URL: set body.url or SANRI_API_PUBLIC_URL / SHOPIER_WEBHOOK_CALLBACK_URL",
+        )
+
+    result = await register_shopier_webhook(url=target, event=body.event)
+
+    err = result.get("error")
+    if err == "pat_missing":
+        raise HTTPException(status_code=503, detail=result.get("message", "SHOPIER_PAT missing"))
+    if err == "invalid_url":
+        raise HTTPException(status_code=400, detail=result.get("message", "Invalid URL"))
+    if err == "invalid_event":
+        raise HTTPException(status_code=400, detail=result.get("message", "Invalid event"))
+    if err == "network_error":
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "Network error calling Shopier", "detail": result.get("message")},
+        )
+    if err == "token_error":
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Shopier rejected PAT (check SHOPIER_PAT)",
+                "shopier_body": result.get("shopier_body"),
+            },
+        )
+    if err == "duplicate_webhook":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Webhook likely already registered",
+                "shopier_body": result.get("shopier_body"),
+                "status_code": result.get("status_code"),
+            },
+        )
+    if err == "shopier_error":
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": result.get("message", "Shopier API error"),
+                "status_code": result.get("status_code"),
+                "shopier_body": result.get("shopier_body"),
+            },
+        )
+
+    if not result.get("ok"):
+        raise HTTPException(status_code=500, detail=result)
+
+    logger.info(
+        "Shopier register-webhook: success event=%s url=%s token_hint=%s",
+        body.event,
+        target,
+        result.get("token_hint"),
+    )
+
+    out: dict = {
+        "message": "Webhook registered",
+        "event": body.event,
+        "url": target,
+        "webhook": result.get("webhook"),
+        "token_hint": result.get("token_hint"),
+    }
+
+    if body.list_after:
+        listed, list_err = await list_shopier_webhooks(limit=50, page=1)
+        out["webhooks_list_error"] = list_err
+        out["webhooks"] = listed
+
+    return out
+
+
+@router.post("/register-webhook")
+async def shopier_register_webhook_post(
+    body: RegisterWebhookBody = Body(default_factory=RegisterWebhookBody),
+    x_admin_secret: Optional[str] = Header(default=None),
+):
+    """Koruma: `X-Admin-Secret: SANRI_ADMIN_SECRET`"""
+    return await _shopier_register_webhook_core(body, x_admin_secret)
+
+
+@router.get("/register-webhook")
+async def shopier_register_webhook_get(
+    secret: str = Query(..., description="SANRI_ADMIN_SECRET — GEÇİCİ tarayıcı testi"),
+    url: Optional[str] = Query(default=None),
+    event: str = Query(default="order.created"),
+    list_after: bool = Query(default=True),
+):
+    """
+    GEÇİCİ — sadece test: tarayıcıdan açmak için.
+    Örnek: /shopier/register-webhook?secret=...&event=order.created
+    Üretimde kapat: bu route'u sil, yalnız POST kullan.
+    """
+    body = RegisterWebhookBody(url=url, event=event, list_after=list_after)
+    return await _shopier_register_webhook_core(body, secret)
+
+
+@router.get("/webhooks")
+async def shopier_list_webhooks(
+    limit: int = 50,
+    page: int = 1,
+    x_admin_secret: Optional[str] = Header(default=None),
+):
+    """Shopier GET /webhooks — kayıtlı abonelikleri listele (PAT)."""
+    if x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Admin access denied")
+    items, err = await list_shopier_webhooks(limit=limit, page=page)
+    if err:
+        raise HTTPException(status_code=502, detail=err)
+    return {"webhooks": items, "count": len(items)}
 
 
 # ═══════════════════════════════════════════════════════════════
