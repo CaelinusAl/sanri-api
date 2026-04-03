@@ -170,7 +170,12 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
 
 
 def _resolve_content_id(title: str, product_id: str) -> str:
-    """Map Shopier product title/id to our content_id."""
+    """Map Shopier product title/id to our content_id (matches frontend localStorage keys)."""
+    pid = str(product_id or "").strip()
+    if pid in ("45812975",):
+        return "role_unlock"
+    if pid in ("45813111",):
+        return "ankod_unlock"
     t = (title or "").lower()
     if "rol" in t or "matrix" in t:
         return "role_unlock"
@@ -192,10 +197,10 @@ def _resolve_content_id(title: str, product_id: str) -> str:
         return "kod_egitmeni"
     if "okuma" in t and "devam" in t:
         return "okuma_devami"
-    if "an_kod" in t or "anın kod" in t:
-        return "ankod"
+    if "an_kod" in t or "anın kod" in t or "an-kod" in t or "ankod" in t:
+        return "ankod_unlock"
     if "bilinçaltı" in t or "bilincalti" in t:
-        return "bilinc_alti"
+        return "subconscious_unlock"
     return product_id or "unknown"
 
 
