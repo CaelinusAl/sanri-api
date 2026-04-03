@@ -29,14 +29,96 @@ router = APIRouter(prefix="/bank-transfer", tags=["bank-transfer"])
 admin_router = APIRouter(prefix="/admin/bank-transfers", tags=["admin-bank-transfers"])
 
 # ── Banka bilgileri (Railway env) ──
-BANK_IBAN = os.getenv("BANK_TRANSFER_IBAN", "").strip()
-BANK_RECIPIENT = os.getenv("BANK_TRANSFER_RECIPIENT_NAME", "").strip()
-BANK_NAME = os.getenv("BANK_TRANSFER_BANK_NAME", "").strip()
-BANK_IBAN_LABEL = os.getenv("BANK_TRANSFER_IBAN_LABEL", "SANRI — TRY").strip()
+# Alternatif isimler: BANK_TRANSFER_BANK / BANK_TRANSFER_NAME (alıcı) — panel uyumu
+
+
+def _env_any(*keys: str) -> str:
+    for k in keys:
+        v = os.getenv(k, "").strip()
+        if v:
+            return v
+    return ""
+
+
+def load_banking_from_env() -> dict[str, str]:
+    """
+    Her istekte os.environ'dan oku (import anındaki değerler worker'da eski kalmasın).
+    Okunan isimler (sırayla ilk dolu olan):
+    - IBAN: BANK_TRANSFER_IBAN | BANK_IBAN
+    - Alıcı: BANK_TRANSFER_RECIPIENT_NAME | BANK_TRANSFER_NAME | BANK_ACCOUNT_NAME | BANK_ACCOUND_NAME (typo)
+    - Banka: BANK_TRANSFER_BANK_NAME | BANK_TRANSFER_BANK | BANK_NAME
+    - Etiket: BANK_TRANSFER_IBAN_LABEL (yoksa SANRI — TRY)
+    - Not: BANK_TRANSFER_NOTE
+    """
+    return {
+        "iban": _env_any("BANK_TRANSFER_IBAN", "BANK_IBAN"),
+        "recipient": _env_any(
+            "BANK_TRANSFER_RECIPIENT_NAME",
+            "BANK_TRANSFER_NAME",
+            "BANK_ACCOUNT_NAME",
+            "BANK_ACCOUND_NAME",  # yaygın yazım hatası (ACCOUND)
+        ),
+        "bank_name": _env_any(
+            "BANK_TRANSFER_BANK_NAME", "BANK_TRANSFER_BANK", "BANK_NAME"
+        ),
+        "iban_label": _env_any("BANK_TRANSFER_IBAN_LABEL") or "SANRI — TRY",
+        "note": _env_any("BANK_TRANSFER_NOTE"),
+    }
+
+
+def _banking_ok(b: dict[str, str]) -> bool:
+    return bool(b.get("iban") and b.get("recipient") and b.get("bank_name"))
+
+
+def _mask_iban_for_log(iban: str) -> str:
+    s = re.sub(r"\s+", "", (iban or "").strip())
+    if not s:
+        return "(boş)"
+    if len(s) < 10:
+        return s[:4] + "…"
+    return s[:6] + "…" + s[-4:]
+
+
+def _log_bank_transfer_env_diag(where: str, content_id: str, b: dict[str, str]) -> None:
+    """Tam IBAN/log sızmaz; hangi env anahtarlarının dolu olduğu + çözümlenmiş uzunluklar."""
+    tracked = (
+        "BANK_TRANSFER_IBAN",
+        "BANK_IBAN",
+        "BANK_TRANSFER_RECIPIENT_NAME",
+        "BANK_TRANSFER_NAME",
+        "BANK_ACCOUNT_NAME",
+        "BANK_ACCOUND_NAME",
+        "BANK_TRANSFER_BANK_NAME",
+        "BANK_TRANSFER_BANK",
+        "BANK_NAME",
+        "BANK_TRANSFER_IBAN_LABEL",
+        "BANK_TRANSFER_NOTE",
+    )
+    present = {k: bool(os.getenv(k, "").strip()) for k in tracked}
+    logger.info(
+        "%s | content_id=%s | db_dialect=%s | env_keys_present=%s | "
+        "resolved_lens iban=%s recipient=%s bank=%s | iban_mask=%s",
+        where,
+        content_id,
+        engine.dialect.name,
+        present,
+        len(b.get("iban") or ""),
+        len(b.get("recipient") or ""),
+        len(b.get("bank_name") or ""),
+        _mask_iban_for_log(b.get("iban") or ""),
+    )
+
+_DEFAULT_INSTRUCTIONS_TR = (
+    "Lütfen havale/EFT açıklamasına yalnızca aşağıdaki kodu yazın. "
+    "Tutarın tam olarak eşleşmesi gerekir."
+)
 
 MAX_RECEIPT_BYTES = int(os.getenv("BANK_TRANSFER_MAX_RECEIPT_BYTES", str(1_500_000)))
 
-# content_id → havale kodu öneki, tutar, ürün adı (istemci tutarı değiştiremesin)
+# ── Havale / EFT ürün kataloğu (TEK KAYNAK) ─────────────────────────
+# Desteklenen tüm content_id değerleri = bu sözlüğün anahtarları.
+# Alanlar: prefix (havale açıklama kodu öneği, A-Z0-9), amount, product_name;
+# isteğe bağlı iban_label → doluysa önizleme / kayıtta global env etiketinin üstüne yazar.
 BANK_PRODUCT_CATALOG: dict[str, dict[str, Any]] = {
     "role_unlock": {
         "prefix": "ROL",
@@ -58,17 +140,37 @@ BANK_PRODUCT_CATALOG: dict[str, dict[str, Any]] = {
         "amount": Decimal("47"),
         "product_name": "Kod Öğrenmeye Giriş — Canlı Ders",
     },
+    "okuma_23": {
+        "prefix": "OKUMA",
+        "amount": Decimal("9.90"),
+        "product_name": "Okuma — Jap_On_ya +81 derin açılım",
+        "iban_label": "SANRI Okuma devamı — 9,90 TL — TRY",
+    },
 }
 
 _TRANSFER_CODE_RE = re.compile(r"^[A-Z0-9]+-\d{4}$")
+
+
+def supported_bank_transfer_content_ids() -> list[str]:
+    """Desteklenen content_id listesi — yalnızca BANK_PRODUCT_CATALOG anahtarları."""
+    return list(BANK_PRODUCT_CATALOG.keys())
+
+
+def _effective_iban_label(cat: dict[str, Any], banking: dict[str, str]) -> str:
+    """Ürün bazlı iban_label varsa onu kullan; yoksa env’den gelen varsayılan."""
+    custom = (cat.get("iban_label") or "").strip()
+    if custom:
+        return custom
+    return (banking.get("iban_label") or "").strip() or "SANRI — TRY"
 
 
 def _is_pg() -> bool:
     return engine.dialect.name == "postgresql"
 
 
-def _ensure_bank_transfer_table():
-    with engine.connect() as conn:
+def _ensure_bank_transfer_table() -> None:
+    """CREATE TABLE + index — SQLAlchemy 2: begin() ile commit garantisi (connect()+commit bazen f405/rollback)."""
+    with engine.begin() as conn:
         if _is_pg():
             conn.execute(
                 sa_text("""
@@ -115,28 +217,54 @@ def _ensure_bank_transfer_table():
                 )
             """)
             )
-        conn.commit()
 
 
 try:
     _ensure_bank_transfer_table()
 except Exception as e:
-    logger.warning("bank_transfer table migration: %s", e)
+    logger.exception("bank_transfer table migration (ilk açılış): %s", e)
 
 
 def _catalog_entry(content_id: str) -> dict[str, Any]:
     cid = (content_id or "").strip()
     row = BANK_PRODUCT_CATALOG.get(cid)
     if not row:
+        supported = supported_bank_transfer_content_ids()
+        logger.warning(
+            "bank_transfer unsupported content_id=%r supported=%s",
+            cid,
+            supported,
+        )
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported content_id for bank transfer: {cid}",
+            detail={
+                "error": "unsupported_content_id",
+                "message": f"Bu içerik için havale / EFT tanımlı değil: {cid!r}",
+                "received_content_id": cid,
+                "supported_content_ids": supported,
+            },
         )
     return row
 
 
-def _banking_configured() -> bool:
-    return bool(BANK_IBAN and BANK_RECIPIENT and BANK_NAME)
+def _banking_env_missing_detail(cid: str, b: dict[str, str]) -> dict[str, Any]:
+    missing = []
+    if not b.get("iban"):
+        missing.append("BANK_TRANSFER_IBAN veya BANK_IBAN")
+    if not b.get("recipient"):
+        missing.append(
+            "BANK_TRANSFER_RECIPIENT_NAME / BANK_TRANSFER_NAME / BANK_ACCOUNT_NAME "
+            "(veya BANK_ACCOUND_NAME)"
+        )
+    if not b.get("bank_name"):
+        missing.append("BANK_TRANSFER_BANK_NAME / BANK_TRANSFER_BANK / BANK_NAME")
+    return {
+        "error": "bank_transfer_env_missing",
+        "message": "Havale / EFT için banka bilgisi eksik (API ortam değişkenleri).",
+        "received_content_id": cid,
+        "supported_content_ids": supported_bank_transfer_content_ids(),
+        "missing_env_variables": missing,
+    }
 
 
 def _generate_unique_transfer_code(conn, prefix: str) -> str:
@@ -155,32 +283,76 @@ class PreviewBody(BaseModel):
     content_id: str = Field(..., min_length=3, max_length=120)
 
 
+# Repoda sabit — canlıda farklıysa Railway eski imaj/deploy kullanıyordur.
+BANK_TRANSFER_ROUTER_BUILD_ID = "sanri-api-bank-transfer-2026-04-02"
+
+
+@router.get("/ready")
+def bank_transfer_ready():
+    """
+    Deploy doğrulama + (gizli veri sızdırmadan) env çözümleme özeti.
+    Eski API’lerde bu route yok → 404 = hâlâ güncel kod yok.
+    """
+    b = load_banking_from_env()
+    return {
+        "build_id": BANK_TRANSFER_ROUTER_BUILD_ID,
+        "banking_complete": _banking_ok(b),
+        "resolved": {
+            "iban": bool(b.get("iban")),
+            "recipient": bool(b.get("recipient")),
+            "bank_name": bool(b.get("bank_name")),
+        },
+    }
+
+
 @router.post("/preview")
 def bank_transfer_preview(body: PreviewBody):
     """IBAN + benzersiz açıklama kodu (henüz kayıt yok)."""
-    if not _banking_configured():
+    cid = body.content_id.strip()
+    logger.info(
+        "POST /bank-transfer/preview | incoming content_id=%r | len=%s | in_catalog=%s",
+        cid,
+        len(cid),
+        cid in BANK_PRODUCT_CATALOG,
+    )
+
+    # 1) Katalog (desteklenmeyen → 400, net gövde)
+    cat = _catalog_entry(cid)
+
+    b = load_banking_from_env()
+    _log_bank_transfer_env_diag("POST /bank-transfer/preview", cid, b)
+    if not _banking_ok(b):
+        raise HTTPException(
+            status_code=400,
+            detail=_banking_env_missing_detail(cid, b),
+        )
+    try:
+        _ensure_bank_transfer_table()
+    except Exception as e:
+        logger.exception("bank_transfer ensure before preview")
         raise HTTPException(
             status_code=503,
-            detail="Bank transfer is not configured (BANK_TRANSFER_* env)",
-        )
-    cat = _catalog_entry(body.content_id)
+            detail={
+                "error": "bank_transfer_schema_error",
+                "message": str(e),
+                "received_content_id": cid,
+                "supported_content_ids": supported_bank_transfer_content_ids(),
+            },
+        ) from e
     prefix = str(cat["prefix"])
     with engine.connect() as conn:
         code = _generate_unique_transfer_code(conn, prefix)
     amount = cat["amount"]
     return {
         "transfer_code": code,
-        "iban": BANK_IBAN,
-        "recipient_name": BANK_RECIPIENT,
-        "bank_name": BANK_NAME,
-        "iban_label": BANK_IBAN_LABEL,
+        "iban": b["iban"],
+        "recipient_name": b["recipient"],
+        "bank_name": b["bank_name"],
+        "iban_label": _effective_iban_label(cat, b),
         "amount": float(amount),
         "product_name": cat["product_name"],
-        "content_id": body.content_id.strip(),
-        "instructions_tr": (
-            "Lütfen havale/EFT açıklamasına yalnızca aşağıdaki kodu yazın. "
-            "Tutarın tam olarak eşleşmesi gerekir."
-        ),
+        "content_id": cid,
+        "instructions_tr": b["note"] or _DEFAULT_INSTRUCTIONS_TR,
     }
 
 
@@ -193,9 +365,20 @@ async def bank_transfer_submit(
     receipt: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    if not _banking_configured():
-        raise HTTPException(status_code=503, detail="Bank transfer not configured")
-    cat = _catalog_entry(content_id)
+    scid = (content_id or "").strip()
+    logger.info(
+        "POST /bank-transfer/submit | incoming content_id=%r | in_catalog=%s",
+        scid,
+        scid in BANK_PRODUCT_CATALOG,
+    )
+    cat = _catalog_entry(scid)
+    b_submit = load_banking_from_env()
+    _log_bank_transfer_env_diag("POST /bank-transfer/submit", scid, b_submit)
+    if not _banking_ok(b_submit):
+        raise HTTPException(
+            status_code=400,
+            detail=_banking_env_missing_detail(scid, b_submit),
+        )
     code = (transfer_code or "").strip().upper()
     if not _TRANSFER_CODE_RE.match(code):
         raise HTTPException(status_code=400, detail="Invalid transfer code format")
@@ -218,10 +401,12 @@ async def bank_transfer_submit(
 
     amount = cat["amount"]
     pname = str(cat["product_name"])
+    ilabel = _effective_iban_label(cat, b_submit)
     try:
         if _is_pg():
-            row = db.execute(
-                sa_text("""
+            rid = int(
+                db.execute(
+                    sa_text("""
                 INSERT INTO bank_transfer_requests (
                     name, email, product_name, content_id, amount, iban_label,
                     transfer_code, receipt_file_url, status
@@ -231,18 +416,18 @@ async def bank_transfer_submit(
                 )
                 RETURNING id
             """),
-                {
-                    "name": nm,
-                    "email": em,
-                    "pname": pname,
-                    "cid": content_id.strip(),
-                    "amount": amount,
-                    "ilabel": BANK_IBAN_LABEL,
-                    "tcode": code,
-                    "receipt": data_url,
-                },
-            ).first()
-            rid = int(row[0]) if row else 0
+                    {
+                        "name": nm,
+                        "email": em,
+                        "pname": pname,
+                        "cid": scid,
+                        "amount": amount,
+                        "ilabel": ilabel,
+                        "tcode": code,
+                        "receipt": data_url,
+                    },
+                ).scalar_one()
+            )
         else:
             db.execute(
                 sa_text("""
@@ -258,9 +443,9 @@ async def bank_transfer_submit(
                     "name": nm,
                     "email": em,
                     "pname": pname,
-                    "cid": content_id.strip(),
+                    "cid": scid,
                     "amount": float(amount),
-                    "ilabel": BANK_IBAN_LABEL,
+                    "ilabel": ilabel,
                     "tcode": code,
                     "receipt": data_url,
                 },
