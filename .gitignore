@@ -9,6 +9,8 @@ _pycache_/
 .venv/
 
 # runtime data
+dev.db
+*.db
 
 data_OLD/
 

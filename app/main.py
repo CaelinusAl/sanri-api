@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.routes.admin import router as admin_router
+from app.routes.admin_accounting import router as admin_accounting_router
 from app.routes.bilinc_alani import router as bilinc_router
 from app.routes.auth import router as auth_router
 from app.routes.subscription import router as subscription_router
@@ -52,6 +53,7 @@ from app.routes.sanri_analyze import router as sanri_analyze_router
 from app.routes.ankod_sanri import router as ankod_sanri_router
 from app.routes.funnel import router as funnel_router
 from app.routes.shopier_purchases import router as shopier_purchases_router
+from app.routes.kod_okuma import router as kod_okuma_router
 
 
 
@@ -132,6 +134,7 @@ app.include_router(bilinc_router)
 app.include_router(auth_router)
 app.include_router(subscription_router)
 app.include_router(admin_router)
+app.include_router(admin_accounting_router)
 app.include_router(awakened_cities_router)
 app.include_router(matrix_rol_router)
 app.include_router(events_router)
@@ -169,3 +172,4 @@ app.include_router(sanri_analyze_router)
 app.include_router(ankod_sanri_router)
 app.include_router(funnel_router)
 app.include_router(shopier_purchases_router)
+app.include_router(kod_okuma_router)

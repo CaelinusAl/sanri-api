@@ -1,56 +1,143 @@
 """
-Shopier purchase tracking — server-side persistence.
+Shopier ödemeleri — production: webhook + PAT ile API doğrulama.
 
-Supports three unlock verification methods:
-  1. Shopier webhook (order.created) — most reliable
-  2. Frontend-recorded purchase (OdemeBasarili page) — fallback
-  3. Device fingerprint matching — works for anonymous users
+- POST /shopier/webhook — imzalı bildirim, sipariş kaydı, gerekirse GET /orders/{id}
+- GET /shopier/check/{content_id} — sunucu kaydı (device / email / JWT kullanıcı)
+- POST /shopier/bind-device — e-posta + içerik → cihaz parmak izi
+- GET /shopier/my-purchases — satın alımlar listesi
 
-Tables: shopier_purchases, email_leads
+Tablo: shopier_purchases (satın alımlar; order_id = shopier_order_id unique)
 """
 
-import os
-import hmac
+from __future__ import annotations
+
 import hashlib
+import hmac
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+import os
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sa_text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError
 
+from app.config.shopier_content_mapping import (
+    product_id_to_content_id,
+    resolve_content_id_from_title_and_product,
+)
 from app.db import get_db, engine
+from app.services.shopier_rest import get_shopier_order
 
 logger = logging.getLogger("shopier")
 
 router = APIRouter(prefix="/shopier", tags=["shopier"])
 
 WEBHOOK_TOKEN = os.getenv("SHOPIER_WEBHOOK_TOKEN", "")
+WEBHOOK_PLAIN_SECRET = os.getenv("SHOPIER_WEBHOOK_SECRET", "").strip()
 ADMIN_SECRET = os.getenv("SANRI_ADMIN_SECRET", "sanri_admin_369")
+SHOPIER_PAT = os.getenv("SHOPIER_PAT", "").strip()
+
+
+def _verify_shopier_signature(payload: bytes, signature: str) -> bool:
+    if not WEBHOOK_TOKEN or not signature:
+        return False
+    expected = hmac.new(WEBHOOK_TOKEN.encode(), payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature.strip())
+
+
+def _webhook_authorized(request: Request, raw_body: bytes) -> bool:
+    if WEBHOOK_PLAIN_SECRET:
+        got = request.headers.get("X-Sanri-Webhook-Secret", "").strip()
+        if hmac.compare_digest(got, WEBHOOK_PLAIN_SECRET):
+            return True
+    if WEBHOOK_TOKEN:
+        sig = (
+            request.headers.get("Shopier-Signature", "")
+            or request.headers.get("X-Shopier-Signature", "")
+            or ""
+        )
+        if _verify_shopier_signature(raw_body, sig):
+            return True
+    return False
 
 
 def _ensure_tables():
+    is_pg = engine.dialect.name == "postgresql"
     with engine.connect() as conn:
-        conn.execute(sa_text("""
-            CREATE TABLE IF NOT EXISTS shopier_purchases (
-                id SERIAL PRIMARY KEY,
-                content_id VARCHAR(120) NOT NULL,
-                product_id VARCHAR(120),
-                device_fp VARCHAR(64),
-                user_id INTEGER,
-                email VARCHAR(255),
-                amount NUMERIC(10,2),
-                currency VARCHAR(10) DEFAULT 'TRY',
-                source VARCHAR(20) DEFAULT 'frontend',
-                shopier_order_id VARCHAR(120),
-                status VARCHAR(20) DEFAULT 'completed',
-                metadata_json TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        """))
+        if is_pg:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS shopier_purchases (
+                    id SERIAL PRIMARY KEY,
+                    content_id VARCHAR(120) NOT NULL,
+                    product_id VARCHAR(120),
+                    device_fp VARCHAR(64),
+                    user_id INTEGER,
+                    email VARCHAR(255),
+                    amount NUMERIC(10,2),
+                    currency VARCHAR(10) DEFAULT 'TRY',
+                    source VARCHAR(40) DEFAULT 'webhook',
+                    shopier_order_id VARCHAR(120),
+                    status VARCHAR(40) DEFAULT 'completed',
+                    metadata_json TEXT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+        else:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS shopier_purchases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content_id VARCHAR(120) NOT NULL,
+                    product_id VARCHAR(120),
+                    device_fp VARCHAR(64),
+                    user_id INTEGER,
+                    email VARCHAR(255),
+                    amount REAL,
+                    currency VARCHAR(10) DEFAULT 'TRY',
+                    source VARCHAR(40) DEFAULT 'webhook',
+                    shopier_order_id VARCHAR(120),
+                    status VARCHAR(40) DEFAULT 'completed',
+                    metadata_json TEXT,
+                    order_number VARCHAR(120),
+                    product_name VARCHAR(500),
+                    product_code VARCHAR(120),
+                    event_type VARCHAR(80),
+                    payment_status VARCHAR(40),
+                    raw_payload TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        if is_pg:
+            for ddl in (
+                "ALTER TABLE shopier_purchases ADD COLUMN IF NOT EXISTS order_number VARCHAR(120)",
+                "ALTER TABLE shopier_purchases ADD COLUMN IF NOT EXISTS product_name VARCHAR(500)",
+                "ALTER TABLE shopier_purchases ADD COLUMN IF NOT EXISTS product_code VARCHAR(120)",
+                "ALTER TABLE shopier_purchases ADD COLUMN IF NOT EXISTS event_type VARCHAR(80)",
+                "ALTER TABLE shopier_purchases ADD COLUMN IF NOT EXISTS payment_status VARCHAR(40)",
+                "ALTER TABLE shopier_purchases ADD COLUMN IF NOT EXISTS raw_payload TEXT",
+            ):
+                try:
+                    conn.execute(sa_text(ddl))
+                except Exception:
+                    logger.warning("shopier_purchases migration skip: %s", ddl[:72])
+        else:
+            for col, typ in (
+                ("order_number", "VARCHAR(120)"),
+                ("product_name", "VARCHAR(500)"),
+                ("product_code", "VARCHAR(120)"),
+                ("event_type", "VARCHAR(80)"),
+                ("payment_status", "VARCHAR(40)"),
+                ("raw_payload", "TEXT"),
+            ):
+                try:
+                    conn.execute(
+                        sa_text(f"ALTER TABLE shopier_purchases ADD COLUMN {col} {typ}")
+                    )
+                except Exception:
+                    pass
         conn.execute(sa_text("""
             CREATE INDEX IF NOT EXISTS ix_sp_device ON shopier_purchases (device_fp)
         """))
@@ -63,19 +150,49 @@ def _ensure_tables():
         conn.execute(sa_text("""
             CREATE INDEX IF NOT EXISTS ix_sp_content ON shopier_purchases (content_id)
         """))
-        conn.execute(sa_text("""
-            CREATE TABLE IF NOT EXISTS email_leads (
-                id SERIAL PRIMARY KEY,
-                email VARCHAR(255) NOT NULL,
-                name VARCHAR(255),
-                source VARCHAR(60),
-                page VARCHAR(120),
-                ip_hash VARCHAR(64),
-                device_fp VARCHAR(64),
-                user_id INTEGER,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        """))
+        try:
+            if is_pg:
+                conn.execute(sa_text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ix_sp_order_id_unique
+                    ON shopier_purchases (shopier_order_id)
+                    WHERE shopier_order_id IS NOT NULL AND shopier_order_id <> ''
+                """))
+            else:
+                conn.execute(sa_text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ix_sp_order_id_unique
+                    ON shopier_purchases (shopier_order_id)
+                    WHERE shopier_order_id IS NOT NULL AND shopier_order_id != ''
+                """))
+        except Exception:
+            logger.warning("ix_sp_order_id_unique oluşturulamadı")
+        if is_pg:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS email_leads (
+                    id SERIAL PRIMARY KEY,
+                    email VARCHAR(255) NOT NULL,
+                    name VARCHAR(255),
+                    source VARCHAR(60),
+                    page VARCHAR(120),
+                    ip_hash VARCHAR(64),
+                    device_fp VARCHAR(64),
+                    user_id INTEGER,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+        else:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS email_leads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email VARCHAR(255) NOT NULL,
+                    name VARCHAR(255),
+                    source VARCHAR(60),
+                    page VARCHAR(120),
+                    ip_hash VARCHAR(64),
+                    device_fp VARCHAR(64),
+                    user_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
         conn.execute(sa_text("""
             CREATE UNIQUE INDEX IF NOT EXISTS ix_el_email ON email_leads (email)
         """))
@@ -85,230 +202,385 @@ def _ensure_tables():
 _ensure_tables()
 
 
-def _verify_shopier_signature(payload: bytes, signature: str) -> bool:
-    if not WEBHOOK_TOKEN:
+def _sql_recent_purchase_window() -> str:
+    if engine.dialect.name == "postgresql":
+        return "created_at > NOW() - INTERVAL '45 days'"
+    return "created_at > datetime('now', '-45 days')"
+
+
+def _parse_amount(val: Any) -> float:
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _payment_is_paid(status: str) -> bool:
+    """Shopier Order.paymentStatus: paid | unpaid (fulfillment ayrı alan)."""
+    s = (status or "").lower().strip()
+    return s in ("paid", "completed", "success", "1")
+
+
+def _extract_line_item(order: dict) -> tuple[str, str, str]:
+    items = order.get("lineItems") or order.get("items") or []
+    if not items or not isinstance(items, list):
+        return "", "", ""
+    first = items[0] if isinstance(items[0], dict) else {}
+    title = str(first.get("title") or "")
+    pid = str(first.get("productId") or first.get("id") or "")
+    code = str(first.get("productCode") or first.get("sku") or "")
+    return title, pid, code
+
+
+def _extract_totals(order: dict) -> tuple[float, str]:
+    totals = order.get("totals")
+    currency = str(order.get("currency") or "TRY")
+    if isinstance(totals, dict):
+        return _parse_amount(totals.get("total") or totals.get("amount")), currency
+    if totals is not None:
+        return _parse_amount(totals), currency
+    return _parse_amount(order.get("total")), currency
+
+
+def _merge_orders(base: dict, api: dict) -> dict:
+    out = dict(base)
+    for k, v in api.items():
+        if v is not None and v != "" and v != []:
+            out[k] = v
+    return out
+
+
+def _needs_api_enrichment(order: dict, preliminary_content: str) -> bool:
+    oid = str(order.get("id") or order.get("orderId") or "").strip()
+    if not oid or not SHOPIER_PAT:
         return False
-    expected = hmac.new(
-        WEBHOOK_TOKEN.encode(), payload, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    ps = str(order.get("paymentStatus") or order.get("status") or "").strip()
+    if not ps:
+        return True
+    items = order.get("lineItems") or order.get("items")
+    if items is None or items == []:
+        return True
+    if preliminary_content in ("", "unknown"):
+        return True
+    return False
+
+
+async def _resolve_order_for_webhook(
+    data: dict,
+) -> tuple[dict, str, str]:
+    """order dict, raw_payload string, event_type"""
+    raw_str = json.dumps(data, ensure_ascii=False)
+    event_type = str(data.get("event") or data.get("type") or "").strip()
+
+    order = data.get("data")
+    if not isinstance(order, dict):
+        order = dict(data)
+
+    title, pid, _code = _extract_line_item(order)
+    pre_cid = product_id_to_content_id(pid)
+    if not pre_cid:
+        pre_cid = resolve_content_id_from_title_and_product(title, pid)
+
+    oid = str(order.get("id") or order.get("orderId") or "").strip()
+    if oid and SHOPIER_PAT and _needs_api_enrichment(order, pre_cid):
+        api_order = await get_shopier_order(oid)
+        if api_order:
+            logger.info("Shopier webhook: enriched order via PAT id=%s", oid)
+            order = _merge_orders(order, api_order)
+        else:
+            logger.warning("Shopier webhook: PAT enrichment failed id=%s", oid)
+
+    return order, raw_str, event_type
+
+
+def _order_payment_status(order: dict) -> str:
+    return str(order.get("paymentStatus") or order.get("status") or "").strip()
 
 
 # ═══════════════════════════════════════════════════════════════
-# POST /shopier/webhook — Shopier order.created webhook
+# POST /shopier/webhook
 # ═══════════════════════════════════════════════════════════════
+
 
 @router.post("/webhook")
 async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
-    signature = request.headers.get("Shopier-Signature", "")
 
-    if WEBHOOK_TOKEN and not _verify_shopier_signature(payload, signature):
-        logger.warning("Shopier webhook: invalid signature")
-        raise HTTPException(status_code=400, detail="Invalid signature")
+    if not _webhook_authorized(request, payload):
+        logger.warning("Shopier webhook: unauthorized")
+        raise HTTPException(status_code=401, detail="Webhook verification failed")
 
     try:
         data = json.loads(payload)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    event_type = data.get("event", "")
-    order = data.get("data", data)
+    order, raw_str, event_type = await _resolve_order_for_webhook(data)
 
-    logger.info(f"Shopier webhook: {event_type}")
+    oid = str(order.get("id") or order.get("orderId") or "").strip()
+    order_number = str(order.get("orderNumber") or order.get("number") or "").strip() or None
+    pay_status = _order_payment_status(order)
 
-    if event_type in ("order.created", ""):
-        order_id = str(order.get("id", ""))
-        payment_status = order.get("paymentStatus", "paid")
+    logger.info(
+        "Shopier webhook event=%s order_id=%s paymentStatus=%s pat=%s",
+        event_type or "(empty)",
+        oid or "(missing)",
+        pay_status or "(empty)",
+        "yes" if SHOPIER_PAT else "no",
+    )
+    logger.debug("Shopier webhook payload_head=%s", raw_str[:3500])
 
-        if payment_status != "paid":
-            return {"received": True, "action": "skipped_unpaid"}
+    supported = (
+        event_type in ("order.created", "order.paid", "payment.completed", "")
+        or event_type.startswith("order.")
+    )
+    if not supported:
+        return {"received": True, "action": "ignored_event", "event": event_type}
 
-        email = ""
-        shipping = order.get("shippingInfo", {})
-        if shipping:
-            email = shipping.get("email", "")
+    if not _payment_is_paid(pay_status):
+        logger.info("Shopier webhook: skipped unpaid order_id=%s status=%s", oid, pay_status)
+        return {"received": True, "action": "skipped_unpaid"}
 
-        totals = order.get("totals", {})
-        amount = float(totals.get("total", 0)) if totals else 0
+    if not oid:
+        logger.warning("Shopier webhook: missing order id")
+        return {"received": True, "action": "skipped_no_order_id"}
 
-        line_items = order.get("lineItems", [])
-        product_title = line_items[0].get("title", "") if line_items else ""
-        product_id = line_items[0].get("productId", "") if line_items else ""
+    title, raw_pid, product_code = _extract_line_item(order)
+    amount, currency = _extract_totals(order)
 
-        content_id = _resolve_content_id(product_title, product_id)
+    cid = product_id_to_content_id(raw_pid)
+    if not cid:
+        cid = resolve_content_id_from_title_and_product(title, raw_pid)
+    if cid == "unknown":
+        logger.warning(
+            "Shopier webhook: unknown content product_id=%s title=%s",
+            raw_pid,
+            title[:80],
+        )
 
-        existing = db.execute(sa_text(
-            "SELECT id FROM shopier_purchases WHERE shopier_order_id = :oid"
-        ), {"oid": order_id}).first()
+    shipping = order.get("shippingInfo") or order.get("shipping") or {}
+    email = ""
+    if isinstance(shipping, dict):
+        email = str(shipping.get("email") or "").strip()
+    if not email:
+        buyer = order.get("buyer") or order.get("customer") or {}
+        if isinstance(buyer, dict):
+            email = str(buyer.get("email") or "").strip()
 
-        if not existing:
-            db.execute(sa_text("""
-                INSERT INTO shopier_purchases
-                    (content_id, product_id, email, amount, currency, source, shopier_order_id, status, metadata_json)
-                VALUES
-                    (:cid, :pid, :email, :amount, 'TRY', 'webhook', :oid, 'completed', :meta)
-            """), {
-                "cid": content_id,
-                "pid": product_id,
-                "email": email,
+    existing = db.execute(
+        sa_text("SELECT id FROM shopier_purchases WHERE shopier_order_id = :oid"),
+        {"oid": oid},
+    ).first()
+
+    if existing:
+        logger.info("Shopier webhook: duplicate order_id=%s", oid)
+        return {"received": True, "action": "duplicate"}
+
+    meta = json.dumps(
+        {"title": title, "event": event_type, "enriched": bool(SHOPIER_PAT)},
+        ensure_ascii=False,
+    )
+
+    try:
+        db.execute(
+            sa_text("""
+                INSERT INTO shopier_purchases (
+                    content_id, product_id, email, amount, currency, source,
+                    shopier_order_id, status, metadata_json,
+                    order_number, product_name, product_code, event_type, payment_status, raw_payload
+                ) VALUES (
+                    :cid, :pid, :email, :amount, :currency, 'webhook',
+                    :oid, 'completed', :meta,
+                    :ordernum, :pname, :pcode, :ev, :pstat, :rawp
+                )
+            """),
+            {
+                "cid": cid,
+                "pid": raw_pid or None,
+                "email": email or None,
                 "amount": amount,
-                "oid": order_id,
-                "meta": json.dumps({"title": product_title}),
-            })
-            db.commit()
+                "currency": currency or "TRY",
+                "oid": oid,
+                "meta": meta,
+                "ordernum": order_number,
+                "pname": title[:500] if title else None,
+                "pcode": product_code or None,
+                "ev": event_type or None,
+                "pstat": pay_status or None,
+                "rawp": raw_str[:500000] if raw_str else None,
+            },
+        )
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.info("Shopier webhook: insert race duplicate order_id=%s", oid)
+        return {"received": True, "action": "duplicate"}
 
-            if email:
-                db.execute(sa_text("""
+    if email:
+        try:
+            db.execute(
+                sa_text("""
                     INSERT INTO email_leads (email, source, page)
                     VALUES (:email, 'shopier_purchase', :content)
                     ON CONFLICT (email) DO NOTHING
-                """), {"email": email, "content": content_id})
-                db.commit()
+                """),
+                {"email": email.lower(), "content": cid},
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
 
-    return {"received": True}
-
-
-def _resolve_content_id(title: str, product_id: str) -> str:
-    """Map Shopier product title/id to our content_id (matches frontend localStorage keys)."""
-    pid = str(product_id or "").strip()
-    if pid in ("45812975",):
-        return "role_unlock"
-    if pid in ("45813111",):
-        return "ankod_unlock"
-    t = (title or "").lower()
-    if "rol" in t or "matrix" in t:
-        return "role_unlock"
-    if "ilişki" in t or "iliski" in t:
-        return "iliski_acilimi"
-    if "para" in t:
-        return "para_akisi"
-    if "kariyer" in t:
-        return "kariyer_acilimi"
-    if "haftalık" in t or "haftalik" in t:
-        return "haftalik_akis"
-    if "sağlık" in t or "enerji" in t or "saglik" in t:
-        return "saglik_enerji"
-    if "112" in t or "tanrıça" in t:
-        return "kitap_112"
-    if "ikra" in t:
-        return "matrix_code"
-    if "kod eğit" in t or "kod egit" in t:
-        return "kod_egitmeni"
-    if "okuma" in t and "devam" in t:
-        return "okuma_devami"
-    if "an_kod" in t or "anın kod" in t or "an-kod" in t or "ankod" in t:
-        return "ankod_unlock"
-    if "bilinçaltı" in t or "bilincalti" in t:
-        return "subconscious_unlock"
-    return product_id or "unknown"
+    return {"received": True, "action": "stored"}
 
 
 # ═══════════════════════════════════════════════════════════════
-# POST /shopier/record — Frontend records a purchase
+# POST /shopier/record — kapalı
 # ═══════════════════════════════════════════════════════════════
 
-class RecordPurchaseBody(BaseModel):
-    content_id: str
-    product_id: Optional[str] = None
-    device_fp: Optional[str] = None
-    amount: Optional[float] = None
-    timestamp: Optional[str] = None
 
 @router.post("/record")
-def record_purchase(
-    body: RecordPurchaseBody,
-    request: Request,
-    authorization: Optional[str] = Header(default=None),
-    db: Session = Depends(get_db),
-):
-    user_id = None
-    if authorization and authorization.startswith("Bearer "):
-        try:
-            from app.services.auth import decode_token
-            payload = decode_token(authorization.replace("Bearer ", "").strip())
-            if payload and payload.get("sub"):
-                user_id = int(payload["sub"])
-        except Exception:
-            pass
+def record_purchase_disabled():
+    raise HTTPException(
+        status_code=403,
+        detail="Client purchase recording is disabled. Purchases are verified via Shopier webhook only.",
+    )
 
-    existing = db.execute(sa_text("""
-        SELECT id FROM shopier_purchases
-        WHERE content_id = :cid
-          AND (device_fp = :fp OR (user_id IS NOT NULL AND user_id = :uid))
-          AND status = 'completed'
+
+class BindDeviceBody(BaseModel):
+    email: str
+    content_id: str
+    device_fp: str
+
+
+@router.post("/bind-device")
+def bind_purchase_to_device(body: BindDeviceBody, db: Session = Depends(get_db)):
+    em = (body.email or "").strip().lower()
+    cid = (body.content_id or "").strip()
+    fp = (body.device_fp or "").strip()
+    if not em or "@" not in em or not cid or not fp:
+        raise HTTPException(status_code=400, detail="Invalid body")
+
+    recent = _sql_recent_purchase_window()
+    row = db.execute(
+        sa_text(f"""
+        SELECT id, device_fp FROM shopier_purchases
+        WHERE content_id = :cid AND status = 'completed'
+          AND LOWER(TRIM(email)) = :em
+          AND {recent}
+        ORDER BY created_at DESC
         LIMIT 1
-    """), {"cid": body.content_id, "fp": body.device_fp or "", "uid": user_id or 0}).first()
+    """),
+        {"cid": cid, "em": em},
+    ).first()
 
-    if existing:
-        return {"ok": True, "action": "already_recorded", "content_id": body.content_id}
+    if not row:
+        return {"ok": False, "error": "not_found"}
 
-    db.execute(sa_text("""
-        INSERT INTO shopier_purchases
-            (content_id, product_id, device_fp, user_id, amount, source, status, metadata_json)
-        VALUES
-            (:cid, :pid, :fp, :uid, :amount, 'frontend', 'completed', :meta)
-    """), {
-        "cid": body.content_id,
-        "pid": body.product_id or "",
-        "fp": body.device_fp or "",
-        "uid": user_id,
-        "amount": body.amount or 0,
-        "meta": json.dumps({"timestamp": body.timestamp, "ip": request.headers.get("x-forwarded-for", "")}),
-    })
+    _id, existing_fp = row[0], (row[1] or "").strip()
+    if existing_fp and existing_fp != fp:
+        return {"ok": False, "error": "device_mismatch"}
+
+    db.execute(
+        sa_text("UPDATE shopier_purchases SET device_fp = :fp WHERE id = :id"),
+        {"fp": fp, "id": _id},
+    )
     db.commit()
-
-    logger.info(f"Purchase recorded: {body.content_id} fp={body.device_fp} uid={user_id}")
-    return {"ok": True, "action": "recorded", "content_id": body.content_id}
+    return {"ok": True}
 
 
-# ═══════════════════════════════════════════════════════════════
-# GET /shopier/check — Check if content is unlocked
-# ═══════════════════════════════════════════════════════════════
+def _row_unlock_for_content(
+    db: Session, content_id: str, params: dict, or_clauses: list
+) -> Any:
+    if not or_clauses:
+        return None
+    where_or = "(" + " OR ".join(or_clauses) + ")"
+    sql = f"""
+        SELECT content_id, amount, currency, created_at
+        FROM shopier_purchases
+        WHERE content_id = :cid AND status = 'completed' AND {where_or}
+        ORDER BY created_at DESC LIMIT 1
+    """
+    p = {"cid": content_id, **params}
+    return db.execute(sa_text(sql), p).first()
+
+
+def _auth_user_email(db: Session, authorization: Optional[str]) -> tuple[Optional[int], Optional[str]]:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None, None
+    try:
+        from app.services.auth import decode_token
+
+        payload = decode_token(authorization.replace("Bearer ", "").strip())
+        if not payload or not payload.get("sub"):
+            return None, None
+        user_id = int(payload["sub"])
+        urow = db.execute(
+            sa_text("SELECT email FROM users WHERE id = :id"),
+            {"id": user_id},
+        ).first()
+        ue = str(urow[0]).strip().lower() if urow and urow[0] else None
+        return user_id, ue if ue and "@" in ue else None
+    except Exception:
+        return None, None
+
 
 @router.get("/check/{content_id}")
 def check_purchase(
     content_id: str,
     device_fp: str = "",
+    email: str = "",
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    user_id = None
-    if authorization and authorization.startswith("Bearer "):
-        try:
-            from app.services.auth import decode_token
-            payload = decode_token(authorization.replace("Bearer ", "").strip())
-            if payload and payload.get("sub"):
-                user_id = int(payload["sub"])
-        except Exception:
-            pass
+    cid = (content_id or "").strip()
+    if not cid:
+        return {"unlocked": False, "purchase": None}
 
-    conditions = []
-    params = {"cid": content_id}
+    ors = []
+    prm: dict = {}
 
     if device_fp:
-        conditions.append("device_fp = :fp")
-        params["fp"] = device_fp
+        ors.append("device_fp = :fp")
+        prm["fp"] = device_fp.strip()
+
+    email_q = (email or "").strip().lower()
+    if email_q and "@" in email_q:
+        ors.append("LOWER(TRIM(email)) = :qemail")
+        prm["qemail"] = email_q
+
+    user_id, user_email = _auth_user_email(db, authorization)
+
     if user_id:
-        conditions.append("user_id = :uid")
-        params["uid"] = user_id
+        ors.append("user_id = :uid")
+        prm["uid"] = user_id
+    if user_email:
+        ors.append("LOWER(TRIM(email)) = :uemail")
+        prm["uemail"] = user_email
 
-    if not conditions:
-        return {"unlocked": False}
+    row = _row_unlock_for_content(db, cid, prm, ors)
+    if not row:
+        return {"unlocked": False, "purchase": None}
 
-    where = " OR ".join(conditions)
-    row = db.execute(sa_text(f"""
-        SELECT id, created_at FROM shopier_purchases
-        WHERE content_id = :cid AND ({where}) AND status = 'completed'
-        ORDER BY created_at DESC LIMIT 1
-    """), params).first()
+    content_id_r, amount, currency, created_at = row[0], row[1], row[2], row[3]
+    purchased_at = str(created_at) if created_at else None
+    amt = float(amount) if amount is not None else 0.0
+    purchase = {
+        "content_id": content_id_r,
+        "amount": amt,
+        "currency": str(currency or "TRY"),
+        "purchased_at": purchased_at,
+    }
+    return {
+        "unlocked": True,
+        "purchase": purchase,
+        "purchased_at": purchased_at,
+    }
 
-    return {"unlocked": bool(row), "purchased_at": str(row[1]) if row else None}
-
-
-# ═══════════════════════════════════════════════════════════════
-# GET /shopier/my-purchases — List all purchases for device/user
-# ═══════════════════════════════════════════════════════════════
 
 @router.get("/my-purchases")
 def my_purchases(
@@ -316,52 +588,52 @@ def my_purchases(
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    user_id = None
-    if authorization and authorization.startswith("Bearer "):
-        try:
-            from app.services.auth import decode_token
-            payload = decode_token(authorization.replace("Bearer ", "").strip())
-            if payload and payload.get("sub"):
-                user_id = int(payload["sub"])
-        except Exception:
-            pass
+    user_id, user_email = _auth_user_email(db, authorization)
 
     conditions = []
-    params = {}
+    params: dict = {}
     if device_fp:
         conditions.append("device_fp = :fp")
         params["fp"] = device_fp
     if user_id:
         conditions.append("user_id = :uid")
         params["uid"] = user_id
+    if user_email:
+        conditions.append("LOWER(TRIM(email)) = :uemail")
+        params["uemail"] = user_email
 
     if not conditions:
         return {"purchases": []}
 
     where = " OR ".join(conditions)
-    rows = db.execute(sa_text(f"""
-        SELECT content_id, product_id, amount, created_at
+    rows = db.execute(
+        sa_text(f"""
+        SELECT content_id, product_id, product_name, amount, currency,
+               shopier_order_id, order_number, payment_status, created_at
         FROM shopier_purchases
         WHERE ({where}) AND status = 'completed'
         ORDER BY created_at DESC
-    """), params).mappings().all()
+    """),
+        params,
+    ).mappings().all()
 
     return {
         "purchases": [
             {
                 "content_id": r["content_id"],
                 "product_id": r["product_id"],
+                "product_name": r["product_name"],
                 "amount": float(r["amount"]) if r["amount"] else 0,
-                "purchased_at": str(r["created_at"]),
+                "currency": r["currency"] or "TRY",
+                "order_id": r["shopier_order_id"],
+                "order_number": r["order_number"],
+                "payment_status": r["payment_status"],
+                "purchased_at": str(r["created_at"]) if r["created_at"] else None,
             }
             for r in rows
         ]
     }
 
-
-# ═══════════════════════════════════════════════════════════════
-# POST /shopier/collect-email — Email lead collection
-# ═══════════════════════════════════════════════════════════════
 
 class EmailLeadBody(BaseModel):
     email: str
@@ -369,6 +641,7 @@ class EmailLeadBody(BaseModel):
     source: Optional[str] = "manual"
     page: Optional[str] = None
     device_fp: Optional[str] = None
+
 
 @router.post("/collect-email")
 def collect_email(
@@ -384,6 +657,7 @@ def collect_email(
     if authorization and authorization.startswith("Bearer "):
         try:
             from app.services.auth import decode_token
+
             payload = decode_token(authorization.replace("Bearer ", "").strip())
             if payload and payload.get("sub"):
                 user_id = int(payload["sub"])
@@ -393,29 +667,28 @@ def collect_email(
     ip_raw = request.headers.get("x-forwarded-for", request.client.host or "")
     ip_hash = hashlib.sha256(ip_raw.encode()).hexdigest()[:16]
 
-    db.execute(sa_text("""
+    db.execute(
+        sa_text("""
         INSERT INTO email_leads (email, name, source, page, ip_hash, device_fp, user_id)
         VALUES (:email, :name, :source, :page, :ip, :fp, :uid)
         ON CONFLICT (email) DO UPDATE SET
             name = COALESCE(EXCLUDED.name, email_leads.name),
             source = EXCLUDED.source,
             page = EXCLUDED.page
-    """), {
-        "email": body.email.strip().lower(),
-        "name": body.name,
-        "source": body.source,
-        "page": body.page,
-        "ip": ip_hash,
-        "fp": body.device_fp,
-        "uid": user_id,
-    })
+    """),
+        {
+            "email": body.email.strip().lower(),
+            "name": body.name,
+            "source": body.source,
+            "page": body.page,
+            "ip": ip_hash,
+            "fp": body.device_fp,
+            "uid": user_id,
+        },
+    )
     db.commit()
     return {"ok": True}
 
-
-# ═══════════════════════════════════════════════════════════════
-# GET /shopier/admin/purchases — Admin view
-# ═══════════════════════════════════════════════════════════════
 
 @router.get("/admin/purchases")
 def admin_purchases(
@@ -425,19 +698,20 @@ def admin_purchases(
     if x_admin_secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Admin access denied")
 
-    rows = db.execute(sa_text("""
-        SELECT id, content_id, product_id, device_fp, user_id, email,
-               amount, source, shopier_order_id, status, created_at
+    rows = db.execute(
+        sa_text("""
+        SELECT id, content_id, product_id, product_name, device_fp, user_id, email,
+               amount, currency, source, shopier_order_id, order_number,
+               status, payment_status, event_type, created_at
         FROM shopier_purchases ORDER BY created_at DESC LIMIT 100
-    """)).mappings().all()
+    """)
+    ).mappings().all()
 
-    total = db.execute(sa_text(
-        "SELECT COALESCE(SUM(amount), 0) FROM shopier_purchases WHERE status = 'completed'"
-    )).scalar()
+    total = db.execute(
+        sa_text("SELECT COALESCE(SUM(amount), 0) FROM shopier_purchases WHERE status = 'completed'")
+    ).scalar()
 
-    leads = db.execute(sa_text(
-        "SELECT COUNT(*) FROM email_leads"
-    )).scalar()
+    leads = db.execute(sa_text("SELECT COUNT(*) FROM email_leads")).scalar()
 
     return {
         "total_revenue": float(total),
