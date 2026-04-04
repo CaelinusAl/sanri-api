@@ -531,7 +531,22 @@ def get_my_access(
     user_id: int = Depends(_get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    return check_access(db, user_id, content_id=content_id)
+    try:
+        return check_access(db, user_id, content_id=content_id)
+    except Exception:
+        logger.exception("GET /billing/me/access failed user_id=%s", user_id)
+        return {
+            "is_premium": False,
+            "plan": "free",
+            "premium_until": None,
+            "has_free_unlock": False,
+            "entitlements": [],
+            "unlocked_content_ids": [],
+            "subscription": None,
+            "content_access": (
+                {"has_access": False, "reason": "locked"} if content_id else None
+            ),
+        }
 
 
 # ═══════════════════════════════════════════════════════════════

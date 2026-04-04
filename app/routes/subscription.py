@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 from fastapi import APIRouter, Query, Header, Depends
 from sqlalchemy.orm import Session
@@ -5,6 +6,8 @@ from app.db import get_db
 from app.services.auth import decode_token
 from app.models.user import User
 from app.models.billing import Subscription, ContentUnlock
+
+logger = logging.getLogger("subscription")
 
 router = APIRouter(prefix="/api/subscription", tags=["subscription"])
 
@@ -60,32 +63,44 @@ def status(
             "limits": {"sanri_daily": 20}, "used": {"sanri_daily": 0},
         }
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return {"is_premium": False, "isPremium": False, "plan": "free", "currentPlan": "free"}
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return {"is_premium": False, "isPremium": False, "plan": "free", "currentPlan": "free"}
 
-    active_sub = (
-        db.query(Subscription)
-        .filter(Subscription.user_id == user_id, Subscription.status.in_(["active", "trialing"]))
-        .order_by(Subscription.created_at.desc())
-        .first()
-    )
+        active_sub = (
+            db.query(Subscription)
+            .filter(Subscription.user_id == user_id, Subscription.status.in_(["active", "trialing"]))
+            .order_by(Subscription.created_at.desc())
+            .first()
+        )
 
-    unlocks_count = db.query(ContentUnlock).filter(ContentUnlock.user_id == user_id).count()
+        unlocks_count = db.query(ContentUnlock).filter(ContentUnlock.user_id == user_id).count()
 
-    return {
-        "is_premium": user.is_premium,
-        "isPremium": user.is_premium,
-        "plan": user.plan or "free",
-        "currentPlan": user.plan or "free",
-        "premium_until": user.premium_until.isoformat() if user.premium_until else None,
-        "subscription": {
-            "product_key": active_sub.product_key,
-            "status": active_sub.status,
-            "cancel_at_period_end": active_sub.cancel_at_period_end,
-            "current_period_end": active_sub.current_period_end.isoformat() if active_sub.current_period_end else None,
-        } if active_sub else None,
-        "unlocked_content_count": unlocks_count,
-        "limits": {"sanri_daily": 999 if user.is_premium else 20},
-        "used": {"sanri_daily": 0},
-    }
+        return {
+            "is_premium": user.is_premium,
+            "isPremium": user.is_premium,
+            "plan": user.plan or "free",
+            "currentPlan": user.plan or "free",
+            "premium_until": user.premium_until.isoformat() if user.premium_until else None,
+            "subscription": {
+                "product_key": active_sub.product_key,
+                "status": active_sub.status,
+                "cancel_at_period_end": active_sub.cancel_at_period_end,
+                "current_period_end": active_sub.current_period_end.isoformat() if active_sub.current_period_end else None,
+            } if active_sub else None,
+            "unlocked_content_count": unlocks_count,
+            "limits": {"sanri_daily": 999 if user.is_premium else 20},
+            "used": {"sanri_daily": 0},
+        }
+    except Exception:
+        logger.exception("GET /api/subscription/status failed user_id=%s", user_id)
+        return {
+            "is_premium": False,
+            "isPremium": False,
+            "plan": "free",
+            "currentPlan": "free",
+            "limits": {"sanri_daily": 20},
+            "used": {"sanri_daily": 0},
+            "subscription": None,
+        }

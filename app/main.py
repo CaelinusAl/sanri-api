@@ -56,6 +56,8 @@ from app.routes.shopier_purchases import router as shopier_purchases_router
 from app.routes.bank_transfer import router as bank_transfer_router
 from app.routes.bank_transfer import admin_router as bank_transfer_admin_router
 from app.routes.kod_okuma import router as kod_okuma_router
+from app.routes.deliverables import router as deliverables_router
+from app.routes.deliverables import admin_router as admin_deliverables_router
 
 
 
@@ -177,3 +179,5 @@ app.include_router(shopier_purchases_router)
 app.include_router(bank_transfer_router)
 app.include_router(bank_transfer_admin_router)
 app.include_router(kod_okuma_router)
+app.include_router(deliverables_router)
+app.include_router(admin_deliverables_router)

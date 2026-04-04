@@ -30,6 +30,58 @@ from app.routes.admin import _require_jwt
 router = APIRouter(prefix="/admin", tags=["admin-accounting"])
 
 
+def _union_customer_emails(db: Session, limit: int = 500) -> list[str]:
+    """Muhasebe müşteri listesi: Shopier + havale + lead — tek kaynakta eksik kalmaması için."""
+    seen: set[str] = set()
+    stmts = [
+        """
+        SELECT DISTINCT LOWER(TRIM(email)) AS e FROM shopier_purchases
+        WHERE email IS NOT NULL AND TRIM(COALESCE(email, '')) <> '' AND email LIKE '%@%'
+        """,
+        """
+        SELECT DISTINCT LOWER(TRIM(email)) AS e FROM bank_transfer_requests
+        WHERE email IS NOT NULL AND TRIM(COALESCE(email, '')) <> '' AND email LIKE '%@%'
+        """,
+        """
+        SELECT DISTINCT LOWER(TRIM(email)) AS e FROM email_leads
+        WHERE email IS NOT NULL AND TRIM(COALESCE(email, '')) <> '' AND email LIKE '%@%'
+        """,
+    ]
+    for sql in stmts:
+        try:
+            for r in db.execute(sa_text(sql), {}).mappings().all():
+                e = (r.get("e") or "").strip().lower()
+                if e and "@" in e:
+                    seen.add(e)
+        except Exception:
+            continue
+    return sorted(seen)[:limit]
+
+
+def _fetch_havale_rows(
+    db: Session, range_start: datetime, range_end: datetime, content_id: Optional[str], limit: int = 500
+):
+    conds = ["created_at >= :rs AND created_at < :re"]
+    p: dict = {"rs": range_start, "re": range_end, "lim": limit}
+    if content_id and content_id.strip():
+        conds.append("content_id = :cid")
+        p["cid"] = content_id.strip()
+    w = " AND ".join(conds)
+    try:
+        return db.execute(
+            sa_text(f"""
+            SELECT id, transfer_code, email, product_name, content_id, amount, status, created_at
+            FROM bank_transfer_requests
+            WHERE {w}
+            ORDER BY created_at DESC
+            LIMIT :lim
+        """),
+            p,
+        ).mappings().all()
+    except Exception:
+        return []
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -228,6 +280,7 @@ def accounting_dashboard(
         orders_out.append(
             {
                 "id": r["id"],
+                "ledger_source": "shopier",
                 "order_id": r["shopier_order_id"],
                 "order_number": r["order_number"],
                 "email": r["email"],
@@ -347,18 +400,27 @@ def accounting_dashboard(
         pass
     funnel_bridge["page_views_total_site"] = pv_total
 
-    # ── Müşteri e-posta listesi (dropdown)
-    emails = mappings(
-        """
-        SELECT DISTINCT LOWER(TRIM(email)) AS email
-        FROM shopier_purchases
-        WHERE email IS NOT NULL AND TRIM(email) <> ''
-        ORDER BY email ASC
-        LIMIT 300
-        """,
-        {},
-    )
-    customer_emails = [r["email"] for r in emails if r["email"]]
+    customer_emails = _union_customer_emails(db, 500)
+
+    havale_raw = _fetch_havale_rows(db, range_start, range_end, content_id, 500)
+    havale_orders = [
+        {
+            "id": r["id"],
+            "ledger_source": "bank_transfer",
+            "order_id": f"bank-transfer-{r['id']}",
+            "order_number": r["transfer_code"],
+            "email": r["email"],
+            "product_name": r["product_name"],
+            "content_id": r["content_id"],
+            "amount": float(r["amount"] or 0),
+            "currency": "TRY",
+            "payment_status": r["status"],
+            "status": "bank_transfer",
+            "unlock_status": "havale",
+            "created_at": str(r["created_at"]) if r["created_at"] else None,
+        }
+        for r in havale_raw
+    ]
 
     return {
         "summary": {
@@ -389,6 +451,7 @@ def accounting_dashboard(
         "by_product": by_product_out,
         "funnel_revenue": funnel_bridge,
         "customer_emails": customer_emails,
+        "havale_orders": havale_orders,
     }
 
 
@@ -400,24 +463,42 @@ def accounting_customer(
 ):
     _ = admin
     em = email.strip().lower()
-    rows = db.execute(
+    rows_sp = db.execute(
         sa_text("""
         SELECT content_id, product_name, amount, currency, payment_status, status,
-               created_at, shopier_order_id
+               created_at, shopier_order_id, 'shopier' AS ledger_source
         FROM shopier_purchases
         WHERE LOWER(TRIM(email)) = :e
-        ORDER BY created_at ASC
         """),
         {"e": em},
     ).mappings().all()
+    rows_bt: list = []
+    try:
+        rows_bt = db.execute(
+            sa_text("""
+            SELECT content_id, product_name, amount, 'TRY' AS currency, status AS payment_status,
+                   status, created_at,
+                   ('bank-transfer-' || CAST(id AS TEXT)) AS shopier_order_id,
+                   'bank_transfer' AS ledger_source
+            FROM bank_transfer_requests
+            WHERE LOWER(TRIM(email)) = :e
+            """),
+            {"e": em},
+        ).mappings().all()
+    except Exception:
+        rows_bt = []
 
-    total = sum(float(r["amount"] or 0) for r in rows)
-    first_at = str(rows[0]["created_at"]) if rows else None
-    last_at = str(rows[-1]["created_at"]) if rows else None
+    merged = sorted(
+        [*rows_sp, *rows_bt],
+        key=lambda r: str(r.get("created_at") or ""),
+    )
+    total = sum(float(r["amount"] or 0) for r in merged)
+    first_at = str(merged[0]["created_at"]) if merged else None
+    last_at = str(merged[-1]["created_at"]) if merged else None
 
     contents = []
     seen = set()
-    for r in rows:
+    for r in merged:
         cid = r["content_id"]
         if cid and cid not in seen:
             seen.add(cid)
@@ -425,7 +506,7 @@ def accounting_customer(
 
     return {
         "email": em,
-        "purchase_count": len(rows),
+        "purchase_count": len(merged),
         "total_spent": round(total, 2),
         "first_purchase_at": first_at,
         "last_purchase_at": last_at,
@@ -439,9 +520,10 @@ def accounting_customer(
                 "payment_status": r["payment_status"],
                 "status": r["status"],
                 "order_id": r["shopier_order_id"],
+                "ledger_source": r.get("ledger_source"),
                 "created_at": str(r["created_at"]) if r["created_at"] else None,
             }
-            for r in rows
+            for r in merged
         ],
     }
 
@@ -490,7 +572,8 @@ def accounting_export_csv(
     rows = db.execute(
         sa_text(f"""
         SELECT shopier_order_id, order_number, email, product_name, content_id,
-               amount, currency, payment_status, status, device_fp, user_id, created_at
+               amount, currency, payment_status, status, device_fp, user_id, created_at,
+               'shopier' AS ledger_source
         FROM shopier_purchases
         WHERE {where_sql}
         ORDER BY created_at DESC
@@ -499,10 +582,42 @@ def accounting_export_csv(
         params,
     ).mappings().all()
 
+    rows_h: list = []
+    try:
+        h_conds = ["created_at >= :rs AND created_at < :re"]
+        hp = {"rs": range_start, "re": range_end}
+        if content_id and content_id.strip():
+            h_conds.append("content_id = :cid")
+            hp["cid"] = content_id.strip()
+        hw = " AND ".join(h_conds)
+        rows_h = db.execute(
+            sa_text(f"""
+            SELECT ('bank-transfer-' || CAST(id AS TEXT)) AS shopier_order_id,
+                   transfer_code AS order_number, email, product_name, content_id,
+                   amount, 'TRY' AS currency, status AS payment_status, status AS status,
+                   NULL AS device_fp, NULL AS user_id, created_at,
+                   'bank_transfer' AS ledger_source
+            FROM bank_transfer_requests
+            WHERE {hw}
+            ORDER BY created_at DESC
+            LIMIT 5000
+            """),
+            hp,
+        ).mappings().all()
+    except Exception:
+        rows_h = []
+
+    merged_csv = sorted(
+        [*rows, *rows_h],
+        key=lambda r: str(r.get("created_at") or ""),
+        reverse=True,
+    )[:5000]
+
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(
         [
+            "ledger_source",
             "order_id",
             "order_number",
             "email",
@@ -516,9 +631,10 @@ def accounting_export_csv(
             "created_at",
         ]
     )
-    for r in rows:
+    for r in merged_csv:
         w.writerow(
             [
+                r.get("ledger_source") or "shopier",
                 r["shopier_order_id"],
                 r["order_number"],
                 r["email"],

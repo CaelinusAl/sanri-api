@@ -16,10 +16,11 @@ import hmac
 import json
 import logging
 import os
+import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sa_text
 from sqlalchemy.exc import IntegrityError
@@ -29,6 +30,7 @@ from app.config.shopier_content_mapping import (
     resolve_content_id_from_title_and_product,
 )
 from app.db import get_db, engine
+from app.validation.contact_email import normalize_contact_email
 from app.services.shopier_rest import (
     get_shopier_order,
     list_shopier_webhooks,
@@ -318,6 +320,70 @@ def _order_payment_status(order: dict) -> str:
     return str(order.get("paymentStatus") or order.get("status") or "").strip()
 
 
+def _coerce_plain_email(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
+def _extract_shopier_order_email(order: dict, raw_json: str = "", _depth: int = 0) -> str:
+    """
+    Shopier webhook / REST sipariş gövdesinden alıcı e-postası.
+    Yapı değişebildiği için birçok anahtar + sınırlı derinlik + ham JSON regex.
+    """
+    if not isinstance(order, dict) or _depth > 4:
+        return ""
+    candidates: list[str] = []
+
+    def take(d: dict, *keys: str) -> None:
+        for k in keys:
+            if k not in d:
+                continue
+            v = _coerce_plain_email(d.get(k))
+            if v and "@" in v:
+                candidates.append(v)
+
+    take(order, "email", "buyerEmail", "customerEmail", "contactEmail")
+    for bkey in (
+        "shippingInfo",
+        "shipping",
+        "shippingAddress",
+        "billingInfo",
+        "billing",
+        "billingAddress",
+    ):
+        sub = order.get(bkey)
+        if isinstance(sub, dict):
+            take(sub, "email", "Email", "buyerEmail", "mail")
+    for bkey in ("buyer", "customer", "user", "purchaser", "recipient"):
+        sub = order.get(bkey)
+        if isinstance(sub, dict):
+            take(sub, "email", "Email")
+    for c in candidates:
+        cl = c.strip().lower().split()[0]
+        dom = cl.split("@", 1)[-1] if "@" in cl else ""
+        if dom and "." in dom:
+            return cl
+    if _depth < 4:
+        for v in order.values():
+            if isinstance(v, dict):
+                inner = _extract_shopier_order_email(v, "", _depth + 1)
+                if inner:
+                    return inner
+    if raw_json and _depth == 0:
+        pat = re.compile(
+            r"\b[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,}\b"
+        )
+        for m in pat.finditer(raw_json):
+            e = m.group(0).strip().lower()
+            dom = e.split("@", 1)[-1]
+            if "." in dom:
+                return e
+    return ""
+
+
 # ═══════════════════════════════════════════════════════════════
 # POST /shopier/webhook
 # ═══════════════════════════════════════════════════════════════
@@ -385,14 +451,12 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
             title[:80],
         )
 
-    shipping = order.get("shippingInfo") or order.get("shipping") or {}
-    email = ""
-    if isinstance(shipping, dict):
-        email = str(shipping.get("email") or "").strip()
-    if not email:
-        buyer = order.get("buyer") or order.get("customer") or {}
-        if isinstance(buyer, dict):
-            email = str(buyer.get("email") or "").strip()
+    email_raw = _extract_shopier_order_email(order, raw_str)
+    email_norm: Optional[str] = None
+    try:
+        email_norm = normalize_contact_email(email_raw) if email_raw else None
+    except ValueError:
+        email_norm = None
 
     existing = db.execute(
         sa_text("SELECT id FROM shopier_purchases WHERE shopier_order_id = :oid"),
@@ -424,7 +488,7 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
             {
                 "cid": cid,
                 "pid": raw_pid or None,
-                "email": email or None,
+                "email": email_norm,
                 "amount": amount,
                 "currency": currency or "TRY",
                 "oid": oid,
@@ -443,7 +507,22 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
         logger.info("Shopier webhook: insert race duplicate order_id=%s", oid)
         return {"received": True, "action": "duplicate"}
 
-    if email:
+    logger.info(
+        "contact_email_audit order_id=%s received_email=%r stored_email=%r source_flow=%s",
+        oid,
+        (email_raw[:320] if email_raw else None),
+        email_norm,
+        "shopier_webhook",
+    )
+    if not email_norm:
+        logger.error(
+            "contact_email_audit MISSING_STORED_EMAIL order_id=%s received_email=%r source_flow=%s",
+            oid,
+            (email_raw[:320] if email_raw else None),
+            "shopier_webhook",
+        )
+
+    if email_norm:
         try:
             db.execute(
                 sa_text("""
@@ -451,13 +530,17 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
                     VALUES (:email, 'shopier_purchase', :content)
                     ON CONFLICT (email) DO NOTHING
                 """),
-                {"email": email.lower(), "content": cid},
+                {"email": email_norm, "content": cid},
             )
             db.commit()
         except Exception:
             db.rollback()
 
-    return {"received": True, "action": "stored"}
+    return {
+        "received": True,
+        "action": "stored",
+        "email_stored": bool(email_norm),
+    }
 
 
 class RegisterWebhookBody(BaseModel):
@@ -613,17 +696,23 @@ def record_purchase_disabled():
 
 
 class BindDeviceBody(BaseModel):
-    email: str
+    email: EmailStr
     content_id: str
     device_fp: str
 
 
 @router.post("/bind-device")
 def bind_purchase_to_device(body: BindDeviceBody, db: Session = Depends(get_db)):
-    em = (body.email or "").strip().lower()
+    try:
+        em = normalize_contact_email(str(body.email))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_email", "message": "Geçerli bir e-posta gerekli."},
+        )
     cid = (body.content_id or "").strip()
     fp = (body.device_fp or "").strip()
-    if not em or "@" not in em or not cid or not fp:
+    if not cid or not fp:
         raise HTTPException(status_code=400, detail="Invalid body")
 
     recent = _sql_recent_purchase_window()
@@ -651,6 +740,13 @@ def bind_purchase_to_device(body: BindDeviceBody, db: Session = Depends(get_db))
         {"fp": fp, "id": _id},
     )
     db.commit()
+    logger.info(
+        "contact_email_audit received_email=%r stored_email=%r source_flow=%s purchase_id=%s",
+        str(body.email),
+        em,
+        "shopier_bind_device",
+        _id,
+    )
     return {"ok": True}
 
 
@@ -667,6 +763,49 @@ def _row_unlock_for_content(
         ORDER BY created_at DESC LIMIT 1
     """
     p = {"cid": content_id, **params}
+    return db.execute(sa_text(sql), p).first()
+
+
+def _row_temp_unlock_for_content(db: Session, content_id: str, prm: dict) -> Any:
+    """Aktif havale geçici kilidi (shopier satırı yokken erişim)."""
+    from app.routes.bank_transfer_helpers import ensure_bank_transfer_aux_tables
+
+    ensure_bank_transfer_aux_tables()
+    tu_parts: list[str] = []
+    if "fp" in prm:
+        tu_parts.append(
+            "(t.device_fp IS NOT NULL AND TRIM(t.device_fp) != '' AND t.device_fp = :fp)"
+        )
+    if "qemail" in prm:
+        tu_parts.append("LOWER(TRIM(t.email)) = :qemail")
+    if "uemail" in prm:
+        tu_parts.append("LOWER(TRIM(t.email)) = :uemail")
+    if "uid" in prm:
+        tu_parts.append(
+            "EXISTS (SELECT 1 FROM users u WHERE u.id = :uid AND "
+            "COALESCE(u.email, '') LIKE '%@%' AND "
+            "LOWER(TRIM(u.email)) = LOWER(TRIM(t.email)))"
+        )
+    if not tu_parts:
+        return None
+    is_pg = engine.dialect.name == "postgresql"
+    alive = (
+        "t.revoked = false AND t.expires_at > NOW()"
+        if is_pg
+        else "t.revoked = 0 AND datetime(t.expires_at) > datetime('now')"
+    )
+    where_id = "(" + " OR ".join(tu_parts) + ")"
+    sql = f"""
+        SELECT t.content_id, r.amount, 'TRY' AS currency, t.created_at
+        FROM bank_transfer_temp_unlocks t
+        INNER JOIN bank_transfer_requests r ON r.id = t.request_id
+        WHERE t.content_id = :cid AND {alive} AND {where_id}
+        ORDER BY t.created_at DESC LIMIT 1
+    """
+    p: dict = {"cid": content_id}
+    for k in ("fp", "qemail", "uemail", "uid"):
+        if k in prm:
+            p[k] = prm[k]
     return db.execute(sa_text(sql), p).first()
 
 
@@ -725,6 +864,8 @@ def check_purchase(
 
     row = _row_unlock_for_content(db, cid, prm, ors)
     if not row:
+        row = _row_temp_unlock_for_content(db, cid, prm)
+    if not row:
         return {"unlocked": False, "purchase": None}
 
     content_id_r, amount, currency, created_at = row[0], row[1], row[2], row[3]
@@ -778,26 +919,76 @@ def my_purchases(
         params,
     ).mappings().all()
 
-    return {
-        "purchases": [
-            {
-                "content_id": r["content_id"],
-                "product_id": r["product_id"],
-                "product_name": r["product_name"],
-                "amount": float(r["amount"]) if r["amount"] else 0,
-                "currency": r["currency"] or "TRY",
-                "order_id": r["shopier_order_id"],
-                "order_number": r["order_number"],
-                "payment_status": r["payment_status"],
-                "purchased_at": str(r["created_at"]) if r["created_at"] else None,
-            }
-            for r in rows
-        ]
-    }
+    purchases = [
+        {
+            "content_id": r["content_id"],
+            "product_id": r["product_id"],
+            "product_name": r["product_name"],
+            "amount": float(r["amount"]) if r["amount"] else 0,
+            "currency": r["currency"] or "TRY",
+            "order_id": r["shopier_order_id"],
+            "order_number": r["order_number"],
+            "payment_status": r["payment_status"],
+            "purchased_at": str(r["created_at"]) if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+    shopier_cids = {p["content_id"] for p in purchases}
+
+    from app.routes.bank_transfer_helpers import ensure_bank_transfer_aux_tables
+
+    ensure_bank_transfer_aux_tables()
+    tu_parts: list[str] = []
+    if device_fp:
+        tu_parts.append(
+            "(t.device_fp IS NOT NULL AND TRIM(t.device_fp) != '' AND t.device_fp = :fp)"
+        )
+    if user_id:
+        tu_parts.append(
+            "EXISTS (SELECT 1 FROM users u WHERE u.id = :uid AND "
+            "COALESCE(u.email, '') LIKE '%@%' AND "
+            "LOWER(TRIM(u.email)) = LOWER(TRIM(t.email)))"
+        )
+    if user_email:
+        tu_parts.append("LOWER(TRIM(t.email)) = :uemail")
+    if tu_parts:
+        is_pg = engine.dialect.name == "postgresql"
+        alive = (
+            "t.revoked = false AND t.expires_at > NOW()"
+            if is_pg
+            else "t.revoked = 0 AND datetime(t.expires_at) > datetime('now')"
+        )
+        tw = "(" + " OR ".join(tu_parts) + ")"
+        sql_tu = f"""
+            SELECT t.id, t.content_id, r.product_name, r.amount, r.transfer_code, t.created_at
+            FROM bank_transfer_temp_unlocks t
+            INNER JOIN bank_transfer_requests r ON r.id = t.request_id
+            WHERE {tw} AND {alive}
+            ORDER BY t.created_at DESC
+        """
+        for tr in db.execute(sa_text(sql_tu), params).mappings().all():
+            cid_t = str(tr["content_id"])
+            if cid_t in shopier_cids:
+                continue
+            purchases.append(
+                {
+                    "content_id": cid_t,
+                    "product_id": cid_t,
+                    "product_name": f"{tr['product_name'] or cid_t} (geçici — havale doğrulama)",
+                    "amount": float(tr["amount"]) if tr["amount"] is not None else 0,
+                    "currency": "TRY",
+                    "order_id": f"bank-temp-{tr['id']}",
+                    "order_number": tr["transfer_code"],
+                    "payment_status": "temp_unlock",
+                    "purchased_at": str(tr["created_at"]) if tr["created_at"] else None,
+                }
+            )
+
+    return {"purchases": purchases}
 
 
 class EmailLeadBody(BaseModel):
-    email: str
+    email: EmailStr
     name: Optional[str] = None
     source: Optional[str] = "manual"
     page: Optional[str] = None
@@ -811,8 +1002,13 @@ def collect_email(
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    if not body.email or "@" not in body.email:
-        raise HTTPException(status_code=400, detail="Invalid email")
+    try:
+        em = normalize_contact_email(str(body.email))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_email", "message": "Geçerli bir e-posta gerekli."},
+        )
 
     user_id = None
     if authorization and authorization.startswith("Bearer "):
@@ -838,7 +1034,7 @@ def collect_email(
             page = EXCLUDED.page
     """),
         {
-            "email": body.email.strip().lower(),
+            "email": em,
             "name": body.name,
             "source": body.source,
             "page": body.page,
@@ -848,6 +1044,13 @@ def collect_email(
         },
     )
     db.commit()
+    logger.info(
+        "contact_email_audit received_email=%r stored_email=%r source_flow=%s page=%r",
+        str(body.email),
+        em,
+        "email_lead_collect",
+        body.page,
+    )
     return {"ok": True}
 
 

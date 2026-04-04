@@ -23,6 +23,21 @@ from app.models.user import User
 
 logger = logging.getLogger("entitlements")
 
+
+def _to_utc_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """SQLite / eski kayıtlar naive datetime döndürebilir; aware UTC ile kıyaslanmalı."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _iso_utc(dt: Optional[datetime]) -> Optional[str]:
+    u = _to_utc_aware(dt)
+    return u.isoformat() if u else None
+
+
 PRODUCT_TO_ENTITLEMENT = {
     "premium_monthly": "premium_access",
     "premium_yearly": "premium_access",
@@ -71,7 +86,9 @@ def grant_entitlement(
     )
 
     if existing:
-        if expires_at and (not existing.expires_at or expires_at > existing.expires_at):
+        ex_new = _to_utc_aware(expires_at)
+        ex_old = _to_utc_aware(existing.expires_at)
+        if ex_new and (ex_old is None or ex_new > ex_old):
             existing.expires_at = expires_at
         existing.source = source
         if stripe_subscription_id:
@@ -166,7 +183,8 @@ def check_access(db: Session, user_id: int, content_id: Optional[str] = None) ->
     valid_ents = []
     expired_keys = []
     for e in active_ents:
-        if e.expires_at and e.expires_at < now:
+        exp = _to_utc_aware(e.expires_at)
+        if exp and exp < now:
             e.is_active = False
             e.revoked_at = now
             expired_keys.append(e.entitlement_key)
@@ -208,22 +226,23 @@ def check_access(db: Session, user_id: int, content_id: Optional[str] = None) ->
 
     premium_until = None
     for e in valid_ents:
-        if e.entitlement_key in ("premium_access", "weekly_access") and e.expires_at:
-            if premium_until is None or e.expires_at > premium_until:
-                premium_until = e.expires_at
+        exp = _to_utc_aware(e.expires_at)
+        if e.entitlement_key in ("premium_access", "weekly_access") and exp:
+            if premium_until is None or exp > premium_until:
+                premium_until = exp
 
     return {
         "is_premium": has_premium or has_weekly,
         "plan": "premium" if has_premium else "weekly" if has_weekly else "free",
-        "premium_until": premium_until.isoformat() if premium_until else None,
+        "premium_until": _iso_utc(premium_until),
         "has_free_unlock": has_free_unlock,
         "entitlements": [
             {
                 "key": e.entitlement_key,
                 "product_key": e.product_key,
                 "source": e.source,
-                "expires_at": e.expires_at.isoformat() if e.expires_at else None,
-                "granted_at": e.granted_at.isoformat(),
+                "expires_at": _iso_utc(e.expires_at),
+                "granted_at": _iso_utc(e.granted_at),
             }
             for e in valid_ents
         ],
