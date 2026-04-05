@@ -1,4 +1,5 @@
 import os
+import html as html_module
 import smtplib
 import random
 import string
@@ -125,3 +126,38 @@ def send_verification_email(to: str, code: str) -> bool:
 def send_password_reset_email(to: str, code: str) -> bool:
     html = _email_template(code, "Şifre Sıfırlama", "Şifreni sıfırlamak için aşağıdaki kodu gir.<br/>Enter the code below to reset your password.")
     return send_email(to, "Sanrı — Şifre Sıfırlama Kodu", html)
+
+
+def send_admin_bank_transfer_notification(
+    *,
+    request_id: int,
+    customer_name: str,
+    customer_email: str,
+    product_name: str,
+    content_id: str,
+    amount,
+    transfer_code: str,
+) -> bool:
+    """Yeni havale bildirimi — ADMIN_ALERT_EMAIL (varsayılan selin@asksanri.com). SMTP yoksa send_email loglar."""
+    to_addr = (os.getenv("ADMIN_ALERT_EMAIL") or "selin@asksanri.com").strip()
+    base = (os.getenv("SANRI_APP_URL") or os.getenv("FRONTEND_URL") or "https://asksanri.com").rstrip("/")
+    admin_link = f"{base}/admin/banka-odemeleri"
+    safe = html_module.escape
+    amt = safe(str(amount))
+    subj = f"[SANRI Havale] Yeni bildirim #{request_id} — {transfer_code}"
+    body = f"""
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:24px;background:#0a0a12;color:#e8e4f0;font-family:system-ui,sans-serif;">
+  <p style="margin:0 0 12px;font-size:18px;font-weight:700;">Yeni havale / EFT bildirimi</p>
+  <table style="border-collapse:collapse;font-size:14px;line-height:1.6;">
+    <tr><td style="padding:4px 12px 4px 0;color:#9a94b0;">Talep no</td><td>#{request_id}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#9a94b0;">Açıklama kodu</td><td><strong>{safe(transfer_code)}</strong></td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#9a94b0;">Tutar</td><td>{amt} ₺</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#9a94b0;">Ürün</td><td>{safe(product_name)} ({safe(content_id)})</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#9a94b0;">Ad</td><td>{safe(customer_name)}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#9a94b0;">E-posta</td><td>{safe(customer_email)}</td></tr>
+  </table>
+  <p style="margin:20px 0 0;"><a href="{safe(admin_link)}" style="color:#c4a7ff;">Admin — Banka ödemeleri</a></p>
+</body></html>"""
+    return send_email(to_addr, subj, body)

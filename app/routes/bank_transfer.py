@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db, engine
 from app.validation.contact_email import normalize_contact_email
 from app.routes.admin import _require_jwt
+from app.services.email_service import send_admin_bank_transfer_notification
 
 logger = logging.getLogger("bank_transfer")
 
@@ -524,6 +525,18 @@ async def bank_transfer_submit(
             )
             rid = int(db.execute(sa_text("SELECT last_insert_rowid()")).scalar() or 0)
         db.commit()
+        try:
+            send_admin_bank_transfer_notification(
+                request_id=rid,
+                customer_name=nm,
+                customer_email=em,
+                product_name=pname,
+                content_id=scid,
+                amount=amount,
+                transfer_code=code,
+            )
+        except Exception as mail_exc:
+            logger.warning("Bank transfer admin notify email failed: %s", mail_exc)
     except IntegrityError:
         db.rollback()
         raise HTTPException(

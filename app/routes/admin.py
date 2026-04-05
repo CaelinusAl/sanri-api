@@ -449,3 +449,260 @@ def membership(admin=Depends(_require_jwt), db: Session = Depends(get_db)):
         "failed_purchases": int(failed_purchases),
         "conversion_rate": conversion,
     }
+
+
+# ═══════════════════════════════════════════════
+# CONTROL TOWER — LIVE NOTIFICATIONS FEED
+# ═══════════════════════════════════════════════
+
+
+def _iso_utc(v):
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        dt = v
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+    return str(v)
+
+
+def _ts_key(v):
+    if v is None:
+        return 0.0
+    if isinstance(v, datetime):
+        dt = v
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    if isinstance(v, str):
+        try:
+            return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return 0.0
+    return 0.0
+
+
+EVENT_NOTIFY_MAP = {
+    "purchase_success": ("Satın alım", "purchase"),
+    "vip_unlock": ("VIP / kilit", "purchase"),
+    "purchase_failed": ("Ödeme hatası", "system"),
+    "purchase_attempt": ("Ödeme denemesi", "comment"),
+    "post_submitted": ("Yankı gönderimi", "moderation"),
+    "message_sent": ("Mesaj", "comment"),
+    "vip_click": ("VIP tıklama", "comment"),
+    "login_failed": ("Giriş", "system"),
+    "auth_error": ("Kimlik", "system"),
+    "rate_limited": ("Güvenlik", "system"),
+    "forbidden": ("Güvenlik", "system"),
+}
+
+
+@router.get("/pending-summary")
+def pending_summary(admin=Depends(_require_jwt), db: Session = Depends(get_db)):
+    bank_n = yanki_n = 0
+    try:
+        bank_n = int(db.execute(sa_text("SELECT COUNT(*) FROM bank_transfer_requests WHERE status = 'pending'")).scalar() or 0)
+    except Exception:
+        pass
+    try:
+        yanki_n = int(db.execute(sa_text("SELECT COUNT(*) FROM yanki_posts WHERE status = 'pending_review'")).scalar() or 0)
+    except Exception:
+        pass
+    return {"bank_transfer_pending": bank_n, "yanki_moderation_pending": yanki_n, "total": bank_n + yanki_n}
+
+
+@router.get("/notifications-feed")
+def notifications_feed(
+    limit: int = Query(default=60, ge=1, le=120),
+    admin=Depends(_require_jwt),
+    db: Session = Depends(get_db),
+):
+    bucket = []
+
+    try:
+        bt_rows = db.execute(
+            sa_text(
+                "SELECT id, name, email, product_name, content_id, amount, transfer_code, created_at "
+                "FROM bank_transfer_requests WHERE status = 'pending' ORDER BY id DESC LIMIT 20"
+            )
+        ).mappings().all()
+        for r in bt_rows:
+            ts = r.get("created_at")
+            bucket.append(
+                (
+                    _ts_key(ts),
+                    {
+                        "id": f"bt-{r['id']}",
+                        "type": "purchase",
+                        "title": "Havale bekliyor",
+                        "text": f"{r.get('name') or '?'} · {r.get('product_name') or ''} · {r.get('amount')} ₺ · {r.get('email') or ''} · {r.get('transfer_code') or ''}",
+                        "time": _iso_utc(ts),
+                        "read": False,
+                        "href": "/admin/banka-odemeleri",
+                    },
+                )
+            )
+    except Exception:
+        pass
+
+    try:
+        yp = db.execute(
+            sa_text(
+                "SELECT id, title, content_raw, created_at FROM yanki_posts "
+                "WHERE status = 'pending_review' ORDER BY created_at DESC LIMIT 15"
+            )
+        ).mappings().all()
+        for r in yp:
+            ts = r.get("created_at")
+            tid = r["id"]
+            raw = (r.get("content_raw") or "").replace("\n", " ")[:200]
+            tit = (r.get("title") or "").strip()
+            line = (f"{tit}: {raw}" if tit else raw).strip() or f"Gönderi #{tid}"
+            bucket.append(
+                (
+                    _ts_key(ts),
+                    {
+                        "id": f"yp-{tid}",
+                        "type": "moderation",
+                        "title": "Yankı onay bekliyor",
+                        "text": f"#{tid} · {line[:280]}",
+                        "time": _iso_utc(ts),
+                        "read": False,
+                        "href": "/admin/yanki",
+                    },
+                )
+            )
+    except Exception:
+        pass
+
+    since_u = datetime.now(timezone.utc) - timedelta(days=7)
+    try:
+        nu = db.execute(
+            sa_text("SELECT id, email, created_at FROM users WHERE created_at >= :s ORDER BY created_at DESC LIMIT 12"),
+            {"s": since_u},
+        ).mappings().all()
+        for r in nu:
+            ts = r.get("created_at")
+            bucket.append(
+                (
+                    _ts_key(ts),
+                    {
+                        "id": f"usr-{r['id']}",
+                        "type": "comment",
+                        "title": "Yeni üye",
+                        "text": r.get("email") or f"user #{r['id']}",
+                        "time": _iso_utc(ts),
+                        "read": False,
+                        "href": "/admin/users",
+                    },
+                )
+            )
+    except Exception:
+        pass
+
+    try:
+        ev_actions = tuple(EVENT_NOTIFY_MAP.keys())
+        evs = (
+            db.query(Event)
+            .filter(Event.action.in_(ev_actions))
+            .order_by(desc(Event.created_at))
+            .limit(40)
+            .all()
+        )
+        for e in evs:
+            title_base, ntype = EVENT_NOTIFY_MAP.get(e.action, ("Olay", "comment"))
+            meta = e.meta
+            extra = ""
+            if isinstance(meta, dict):
+                extra = str(meta.get("path") or meta.get("content_id") or meta.get("domain") or "")[:100]
+            elif meta:
+                extra = str(meta)[:100]
+            ts = e.created_at
+            dom = f" · {e.domain}" if getattr(e, "domain", None) else ""
+            bucket.append(
+                (
+                    _ts_key(ts),
+                    {
+                        "id": f"ev-{e.id}",
+                        "type": ntype,
+                        "title": title_base,
+                        "text": f"{e.action}{(' · ' + extra) if extra else ''}{dom}",
+                        "time": _iso_utc(ts),
+                        "read": False,
+                        "href": "/admin/system",
+                    },
+                )
+            )
+    except Exception:
+        pass
+
+    s24 = datetime.now(timezone.utc) - timedelta(hours=24)
+    try:
+        fro = db.execute(
+            sa_text(
+                "SELECT id, event_type, source, created_at FROM funnel_events WHERE created_at >= :s ORDER BY created_at DESC LIMIT 25"
+            ),
+            {"s": s24},
+        ).mappings().all()
+        for r in fro:
+            ts = r.get("created_at")
+            et = r.get("event_type") or ""
+            src = r.get("source") or ""
+            bucket.append(
+                (
+                    _ts_key(ts),
+                    {
+                        "id": f"fe-{r['id']}",
+                        "type": "comment",
+                        "title": "Funnel",
+                        "text": f"{et}{(' · ' + src) if src else ''}",
+                        "time": _iso_utc(ts),
+                        "read": False,
+                        "href": "/admin/funnel",
+                    },
+                )
+            )
+    except Exception:
+        pass
+
+    try:
+        aud = db.execute(
+            sa_text(
+                "SELECT id, admin_email, action, target_type, target_id, created_at FROM admin_audit_log "
+                "ORDER BY created_at DESC LIMIT 12"
+            )
+        ).mappings().all()
+        for r in aud:
+            ts = r.get("created_at")
+            tgt = ""
+            if r.get("target_type"):
+                tgt = f" · {r.get('target_type')} {r.get('target_id') or ''}"
+            bucket.append(
+                (
+                    _ts_key(ts),
+                    {
+                        "id": f"au-{r['id']}",
+                        "type": "system",
+                        "title": "Admin işlemi",
+                        "text": f"{r.get('admin_email') or 'admin'}: {r.get('action') or ''}{tgt}",
+                        "time": _iso_utc(ts),
+                        "read": False,
+                        "href": "/admin/system",
+                    },
+                )
+            )
+    except Exception:
+        pass
+
+    bucket.sort(key=lambda x: x[0], reverse=True)
+    out = [x[1] for x in bucket[:limit]]
+    seen = set()
+    deduped = []
+    for it in out:
+        iid = it.get("id")
+        if iid in seen:
+            continue
+        seen.add(iid)
+        deduped.append(it)
+    return {"items": deduped}
