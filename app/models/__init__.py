@@ -2,9 +2,10 @@
 from .user import User
 from .usage import Usage
 from .content import DailyStream, WeeklySymbol  # noqa: F401
-from .yanki import YankiPost, YankiComment, YankiReaction, YankiReport  # noqa: F401
+from .yanki import YankiPost, YankiComment, YankiReaction, YankiReport, YankiFieldEcho  # noqa: F401
 from .sanri_reflection import SanriReflection  # noqa: F401
 from .notification import YankiNotification  # noqa: F401
 from .referral import YankiReferral  # noqa: F401
 from .billing import Subscription, Purchase, ContentUnlock, UserEntitlement  # noqa: F401
 from .funnel_event import FunnelEvent  # noqa: F401
+from .anlasilma_field import AnlasilmaPresence, AnlasilmaChatRoom, AnlasilmaChatMessage  # noqa: F401

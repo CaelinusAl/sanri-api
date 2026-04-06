@@ -34,6 +34,13 @@ class YankiPost(Base):
     report_count = Column(Integer, default=0, nullable=False)
     comment_count = Column(Integer, default=0, nullable=False)
 
+    # Anlaşılma → Yankı birleşik alan (frekans hissel akışı)
+    frequency_hz = Column(Integer, nullable=True, index=True)
+    energy_feel = Column(String(120), nullable=True)
+    post_source = Column(String(30), default="classic", nullable=False, index=True)
+    anlasilma_session_id = Column(String(80), nullable=True, index=True)
+    field_echo_count = Column(Integer, default=0, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, nullable=True, onupdate=datetime.utcnow)
     reviewed_at = Column(DateTime, nullable=True)
@@ -78,6 +85,10 @@ class YankiPost(Base):
             "comment_count": self.comment_count,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "published_at": self.published_at.isoformat() if self.published_at else None,
+            "frequency_hz": self.frequency_hz,
+            "energy_feel": self.energy_feel,
+            "post_source": getattr(self, "post_source", None) or "classic",
+            "field_echo_count": int(self.field_echo_count or 0),
         }
 
     def to_admin_dict(self):
@@ -147,3 +158,25 @@ class YankiReport(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     post = relationship("YankiPost", back_populates="reports")
+
+
+class YankiFieldEcho(Base):
+    """Hissel akış: klasik yorum değil, kısa 'yankı' (anonim session)."""
+
+    __tablename__ = "yanki_field_echoes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("yanki_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(String(80), nullable=False, index=True)
+    body = Column(String(400), nullable=False)
+    status = Column(String(20), default="published", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    post = relationship("YankiPost", foreign_keys=[post_id], lazy="select")
+
+    def to_public_dict(self):
+        return {
+            "id": self.id,
+            "body": self.body,
+            "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
+        }

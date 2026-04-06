@@ -45,6 +45,7 @@ from app.routes.ritual_voice import router as ritual_voice_router
 from app.routes.gates import router as gates_router
 from app.routes.awakened_content import router as awakened_content_router
 from app.routes.yanki import router as yanki_router
+from app.routes.yanki_field import router as yanki_field_router
 from app.routes.billing import router as billing_router
 from app.routes.iyzico import router as iyzico_router
 from app.routes.pageview import router as pageview_router
@@ -58,6 +59,7 @@ from app.routes.bank_transfer import admin_router as bank_transfer_admin_router
 from app.routes.kod_okuma import router as kod_okuma_router
 from app.routes.deliverables import router as deliverables_router
 from app.routes.deliverables import admin_router as admin_deliverables_router
+from app.routes.anlasilma_alani import router as anlasilma_router
 
 
 
@@ -168,6 +170,7 @@ app.include_router(ritual_voice_router)
 app.include_router(gates_router)
 app.include_router(awakened_content_router)
 app.include_router(yanki_router)
+app.include_router(yanki_field_router)
 app.include_router(billing_router)
 app.include_router(iyzico_router)
 app.include_router(pageview_router)
@@ -181,3 +184,4 @@ app.include_router(bank_transfer_admin_router)
 app.include_router(kod_okuma_router)
 app.include_router(deliverables_router)
 app.include_router(admin_deliverables_router)
+app.include_router(anlasilma_router)

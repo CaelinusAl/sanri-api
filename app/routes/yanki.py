@@ -41,6 +41,11 @@ def _migrate_yanki_schema():
                 "reaction_sessizce": "INTEGER DEFAULT 0",
                 "comment_count": "INTEGER DEFAULT 0",
                 "updated_at": "TIMESTAMP",
+                "frequency_hz": "INTEGER",
+                "energy_feel": "VARCHAR(120)",
+                "post_source": "VARCHAR(30) DEFAULT 'classic'",
+                "anlasilma_session_id": "VARCHAR(80)",
+                "field_echo_count": "INTEGER DEFAULT 0",
             }
             for col_name, col_def in adds.items():
                 if col_name not in cols:
@@ -181,6 +186,7 @@ class OkOut(BaseModel):
 VALID_CATEGORIES = [
     "genel", "duygu", "ruya", "soru", "farkindalik",
     "donusum", "isaret", "gunluk_akis", "sesli_yanki", "gorsel_yanki",
+    "frekans_alani",
 ]
 VALID_REACTIONS = ["kalbime_dokundu", "ben_de_hissettim", "sessizce_aldim"]
 
