@@ -60,6 +60,7 @@ from app.routes.kod_okuma import router as kod_okuma_router
 from app.routes.deliverables import router as deliverables_router
 from app.routes.deliverables import admin_router as admin_deliverables_router
 from app.routes.anlasilma_alani import router as anlasilma_router
+from app.routes.daily_feeling import router as daily_feeling_router
 
 
 
@@ -79,8 +80,11 @@ app = FastAPI()
 
 @app.on_event("startup")
 def start_background_jobs():
-    # start_scheduler()
-    pass
+    try:
+        start_scheduler()
+    except Exception as exc:
+        import logging
+        logging.getLogger("sanri.scheduler").warning("Scheduler start failed: %s", exc)
       
 @app.get("/")
 def root():
@@ -89,6 +93,11 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/health/scheduler")
+def health_scheduler():
+    from app.services.feed_scheduler import get_scheduler_health
+    return get_scheduler_health()
 
 @app.on_event("startup")
 def _startup():
@@ -185,3 +194,4 @@ app.include_router(kod_okuma_router)
 app.include_router(deliverables_router)
 app.include_router(admin_deliverables_router)
 app.include_router(anlasilma_router)
+app.include_router(daily_feeling_router)

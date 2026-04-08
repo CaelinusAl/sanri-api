@@ -9,3 +9,4 @@ from .referral import YankiReferral  # noqa: F401
 from .billing import Subscription, Purchase, ContentUnlock, UserEntitlement  # noqa: F401
 from .funnel_event import FunnelEvent  # noqa: F401
 from .anlasilma_field import AnlasilmaPresence, AnlasilmaChatRoom, AnlasilmaChatMessage  # noqa: F401
+from .daily_feeling import DailyFeeling  # noqa: F401
