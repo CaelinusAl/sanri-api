@@ -139,6 +139,31 @@ async def get_shopier_orders(
         return []
 
 
+async def search_orders_by_email(email: str, limit: int = 20) -> list[dict[str, Any]]:
+    """
+    Shopier PAT ile son siparisleri cek, email ile eslesenleri dondur.
+    Shopier API'de email filtresi yoksa tum siparisleri cekip client-side filtreler.
+    """
+    email_norm = (email or "").strip().lower()
+    if not email_norm or "@" not in email_norm:
+        return []
+
+    all_orders = await get_shopier_orders(limit=limit, extra_params={"sort": "-created_at"})
+    matched = []
+    for order in all_orders:
+        order_email = ""
+        for field in ("buyerEmail", "buyer_email", "email"):
+            if order.get(field):
+                order_email = str(order[field]).strip().lower()
+                break
+        buyer = order.get("buyer") or order.get("shippingAddress") or {}
+        if not order_email and isinstance(buyer, dict):
+            order_email = str(buyer.get("email") or "").strip().lower()
+        if order_email == email_norm:
+            matched.append(order)
+    return matched
+
+
 def _unwrap_webhook_payload(data: Any) -> Optional[dict[str, Any]]:
     if data is None:
         return None

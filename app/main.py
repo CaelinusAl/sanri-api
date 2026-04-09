@@ -79,6 +79,34 @@ def _split_origins(v: str) -> list[str]:
 app = FastAPI()
 
 @app.on_event("startup")
+async def _register_shopier_webhook_on_startup():
+    """Idempotent: Shopier'e webhook kaydi — zaten varsa duplicate_webhook doner, sorun yok."""
+    import logging
+    _log = logging.getLogger("shopier.startup")
+    try:
+        from app.services.shopier_rest import register_shopier_webhook
+        callback_url = os.getenv("SHOPIER_WEBHOOK_CALLBACK_URL", "").strip()
+        if not callback_url:
+            base = os.getenv("SANRI_API_PUBLIC_URL", "").strip().rstrip("/")
+            if base:
+                callback_url = f"{base}/shopier/webhook"
+        if not callback_url:
+            _log.warning("Shopier webhook: no callback URL configured, skip auto-register")
+            return
+        result = await register_shopier_webhook(url=callback_url, event="order.created")
+        if result.get("ok"):
+            _log.info("Shopier webhook registered: %s token_hint=%s", callback_url, result.get("token_hint"))
+        elif result.get("error") == "duplicate_webhook":
+            _log.info("Shopier webhook already registered: %s", callback_url)
+        elif result.get("error") == "pat_missing":
+            _log.warning("Shopier webhook: SHOPIER_PAT not set, skip auto-register")
+        else:
+            _log.warning("Shopier webhook registration issue: %s", result)
+    except Exception as exc:
+        _log.warning("Shopier webhook auto-register failed: %s", exc)
+
+
+@app.on_event("startup")
 def start_background_jobs():
     try:
         start_scheduler()

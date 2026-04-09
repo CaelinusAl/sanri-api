@@ -35,6 +35,7 @@ from app.services.shopier_rest import (
     get_shopier_order,
     list_shopier_webhooks,
     register_shopier_webhook,
+    search_orders_by_email,
 )
 
 logger = logging.getLogger("shopier")
@@ -70,7 +71,7 @@ def _verify_shopier_signature(payload: bytes, signature: str) -> bool:
 def _webhook_authorized(request: Request, raw_body: bytes) -> bool:
     if WEBHOOK_PLAIN_SECRET:
         got = request.headers.get("X-Sanri-Webhook-Secret", "").strip()
-        if hmac.compare_digest(got, WEBHOOK_PLAIN_SECRET):
+        if got and hmac.compare_digest(got, WEBHOOK_PLAIN_SECRET):
             return True
     if WEBHOOK_TOKEN:
         sig = (
@@ -80,6 +81,24 @@ def _webhook_authorized(request: Request, raw_body: bytes) -> bool:
         )
         if _verify_shopier_signature(raw_body, sig):
             return True
+    if WEBHOOK_PLAIN_SECRET:
+        sig_header = (
+            request.headers.get("Shopier-Signature", "")
+            or request.headers.get("X-Shopier-Hmac-Sha256", "")
+            or ""
+        ).strip()
+        if sig_header:
+            expected = hmac.new(
+                WEBHOOK_PLAIN_SECRET.encode(), raw_body, hashlib.sha256
+            ).hexdigest()
+            if hmac.compare_digest(expected, sig_header):
+                return True
+            import base64
+            expected_b64 = base64.b64encode(
+                hmac.new(WEBHOOK_PLAIN_SECRET.encode(), raw_body, hashlib.sha256).digest()
+            ).decode()
+            if hmac.compare_digest(expected_b64, sig_header):
+                return True
     return False
 
 
@@ -1052,6 +1071,113 @@ def collect_email(
         body.page,
     )
     return {"ok": True}
+
+
+class VerifyByEmailBody(BaseModel):
+    email: str
+    content_id: str
+
+
+@router.post("/verify-by-email")
+async def verify_by_email(body: VerifyByEmailBody, db: Session = Depends(get_db)):
+    """
+    Katman 2 — PAT fallback: Shopier API'den email ile siparis arayip, eslesen
+    siparis varsa shopier_purchases'a INSERT eder ve unlocked doner.
+    Webhook basarisiz olduysa bu endpoint otomatik unlock saglar.
+    """
+    em = (body.email or "").strip().lower()
+    cid = (body.content_id or "").strip()
+    if not em or "@" not in em or not cid:
+        return {"unlocked": False, "reason": "invalid_params"}
+
+    recent = _sql_recent_purchase_window()
+    existing = db.execute(
+        sa_text(f"""
+            SELECT id FROM shopier_purchases
+            WHERE content_id = :cid AND status = 'completed'
+              AND LOWER(TRIM(email)) = :em
+              AND {recent}
+            LIMIT 1
+        """),
+        {"cid": cid, "em": em},
+    ).first()
+    if existing:
+        return {"unlocked": True, "reason": "already_in_db"}
+
+    if not SHOPIER_PAT:
+        return {"unlocked": False, "reason": "pat_not_configured"}
+
+    orders = await search_orders_by_email(em, limit=30)
+    if not orders:
+        return {"unlocked": False, "reason": "no_orders_found"}
+
+    for order in orders:
+        pay_status = _order_payment_status(order)
+        if not _payment_is_paid(pay_status):
+            continue
+
+        title, raw_pid, product_code = _extract_line_item(order)
+        order_cid = product_id_to_content_id(raw_pid)
+        if not order_cid:
+            order_cid = resolve_content_id_from_title_and_product(title, raw_pid)
+
+        if order_cid != cid and order_cid != "unknown":
+            continue
+
+        oid = str(order.get("id") or order.get("orderId") or "").strip()
+        if not oid:
+            continue
+
+        dup = db.execute(
+            sa_text("SELECT id FROM shopier_purchases WHERE shopier_order_id = :oid"),
+            {"oid": oid},
+        ).first()
+        if dup:
+            return {"unlocked": True, "reason": "already_in_db_by_order"}
+
+        amount, currency = _extract_totals(order)
+        order_number = str(order.get("orderNumber") or order.get("number") or "").strip() or None
+        meta = json.dumps(
+            {"title": title, "source": "verify_by_email", "enriched": True},
+            ensure_ascii=False,
+        )
+
+        try:
+            db.execute(
+                sa_text("""
+                    INSERT INTO shopier_purchases (
+                        content_id, product_id, email, amount, currency, source,
+                        shopier_order_id, status, metadata_json,
+                        order_number, product_name, product_code, event_type, payment_status
+                    ) VALUES (
+                        :cid, :pid, :email, :amount, :currency, 'pat_verify',
+                        :oid, 'completed', :meta,
+                        :ordernum, :pname, :pcode, 'verify_by_email', :pstat
+                    )
+                """),
+                {
+                    "cid": cid,
+                    "pid": raw_pid or None,
+                    "email": em,
+                    "amount": amount,
+                    "currency": currency or "TRY",
+                    "oid": oid,
+                    "meta": meta,
+                    "ordernum": order_number,
+                    "pname": title[:500] if title else None,
+                    "pcode": product_code or None,
+                    "pstat": pay_status or None,
+                },
+            )
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return {"unlocked": True, "reason": "race_duplicate"}
+
+        logger.info("verify-by-email: matched order=%s email=%s cid=%s", oid, em, cid)
+        return {"unlocked": True, "reason": "pat_verified", "order_id": oid}
+
+    return {"unlocked": False, "reason": "no_matching_paid_order"}
 
 
 @router.get("/admin/purchases")
