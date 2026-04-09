@@ -1083,3 +1083,51 @@ def admin_purchases(
         "total_email_leads": leads,
         "purchases": [dict(r) for r in rows],
     }
+
+
+class AdminGrantBody(BaseModel):
+    email: str
+    content_id: str
+    amount: float = 0
+    note: str = ""
+
+
+@router.post("/admin/grant-unlock")
+def admin_grant_unlock(
+    body: AdminGrantBody,
+    x_admin_secret: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Admin access denied")
+
+    _ensure_tables()
+    email_norm = body.email.strip().lower()
+    oid = f"manual-admin-{email_norm}-{body.content_id}-{int(__import__('time').time())}"
+
+    try:
+        db.execute(
+            sa_text("""
+                INSERT INTO shopier_purchases (
+                    content_id, email, amount, currency, source,
+                    shopier_order_id, status, metadata_json
+                ) VALUES (
+                    :cid, :email, :amount, 'TRY', 'admin_grant',
+                    :oid, 'completed', :meta
+                )
+            """),
+            {
+                "cid": body.content_id,
+                "email": email_norm,
+                "amount": body.amount,
+                "oid": oid,
+                "meta": json.dumps({"note": body.note, "granted_by": "admin"}, ensure_ascii=False),
+            },
+        )
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return {"ok": False, "error": "duplicate"}
+
+    logger.info("Admin grant: %s -> %s (%s)", email_norm, body.content_id, oid)
+    return {"ok": True, "order_id": oid, "content_id": body.content_id, "email": email_norm}

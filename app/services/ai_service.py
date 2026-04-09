@@ -28,8 +28,8 @@ def generate_sanri_response(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_input},
         ],
-        temperature=0.9,
-        max_tokens=500,
+        temperature=0.88,
+        max_tokens=900,
     )
 
     text_resp = (completion.choices[0].message.content or "").strip()
