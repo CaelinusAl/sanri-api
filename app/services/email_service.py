@@ -1,5 +1,6 @@
 import os
 import html as html_module
+import logging
 import smtplib
 import random
 import string
@@ -9,22 +10,44 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
+logger = logging.getLogger("email")
+
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER
 
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+RESEND_FROM = os.getenv("RESEND_FROM", "Sanr\u0131 <selin@asksanri.com>").strip()
+
 def generate_code() -> str:
     return "".join(random.choices(string.digits, k=6))
 
-def send_email(to: str, subject: str, html_body: str) -> bool:
-    if not SMTP_USER or not SMTP_PASS:
-        print(f"[EMAIL] SMTP not configured. Code would be sent to {to}")
+
+def _send_via_resend(to: str, subject: str, html_body: str) -> bool:
+    import httpx
+    try:
+        r = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": RESEND_FROM, "to": [to], "subject": subject, "html": html_body},
+            timeout=15,
+        )
+        if r.is_success:
+            logger.info("[EMAIL] Resend OK to=%s id=%s", to, r.json().get("id"))
+            return True
+        logger.warning("[EMAIL] Resend fail to=%s status=%s body=%s", to, r.status_code, r.text[:200])
         return False
+    except Exception as e:
+        logger.warning("[EMAIL] Resend error to=%s err=%s", to, e)
+        return False
+
+
+def _send_via_smtp(to: str, subject: str, html_body: str) -> bool:
     try:
         msg = MIMEMultipart("alternative")
-        msg["From"] = f"Sanrı <{SMTP_FROM}>"
+        msg["From"] = f"Sanr\u0131 <{SMTP_FROM}>"
         msg["To"] = to
         msg["Subject"] = subject
         msg.attach(MIMEText(html_body, "html", "utf-8"))
@@ -35,8 +58,17 @@ def send_email(to: str, subject: str, html_body: str) -> bool:
             server.sendmail(SMTP_FROM, to, msg.as_string())
         return True
     except Exception as e:
-        print(f"[EMAIL] Send failed: {e}")
+        logger.warning("[EMAIL] SMTP fail to=%s err=%s", to, e)
         return False
+
+
+def send_email(to: str, subject: str, html_body: str) -> bool:
+    if RESEND_API_KEY:
+        return _send_via_resend(to, subject, html_body)
+    if SMTP_USER and SMTP_PASS:
+        return _send_via_smtp(to, subject, html_body)
+    logger.warning("[EMAIL] No email provider configured (set RESEND_API_KEY or SMTP_USER+SMTP_PASS). to=%s", to)
+    return False
 
 def create_verification_code(db: Session, user_id: int, email: str, code_type: str) -> str:
     """Create a 6-digit verification code, valid for 15 minutes. Invalidates previous codes."""
@@ -126,6 +158,42 @@ def send_verification_email(to: str, code: str) -> bool:
 def send_password_reset_email(to: str, code: str) -> bool:
     html = _email_template(code, "Şifre Sıfırlama", "Şifreni sıfırlamak için aşağıdaki kodu gir.<br/>Enter the code below to reset your password.")
     return send_email(to, "Sanrı — Şifre Sıfırlama Kodu", html)
+
+
+PURCHASE_PRODUCT_NAMES = {
+    "role_unlock": "Matrix Rol Okuma \u2014 Tam Analiz",
+    "okuma_devami": "Okuma Devam\u0131",
+    "kod_giris_ders": "Kod Okumaya Giri\u015f \u2014 Canl\u0131 Ders",
+    "kitap_112": "112. Kitap: Kendini Yaratan Tanr\u0131\u00e7a",
+    "kod_egitmeni": "SANRI Kod Okuma Sistemi\u2122 \u2014 Tam Eri\u015fim",
+    "ankod_unlock": "AN_KOD \u2014 An\u0131n Kodlar\u0131",
+    "subconscious_unlock": "Bilin\u00e7alt\u0131n Ne Diyor?",
+    "iliski_acilimi": "\u0130li\u015fki A\u00e7\u0131l\u0131m\u0131",
+    "kariyer_acilimi": "Kariyer A\u00e7\u0131l\u0131m\u0131",
+    "genel_derin_acilim": "Genel Derin A\u00e7\u0131l\u0131m",
+}
+
+
+def send_purchase_confirmation(to: str, content_id: str) -> bool:
+    """Satin alma sonrasi musteri bildirim e-postasi."""
+    product_name = PURCHASE_PRODUCT_NAMES.get(content_id, content_id)
+    safe = html_module.escape
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#07080d;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#07080d;padding:40px 20px;"><tr><td align="center">
+<table width="500" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,rgba(169,112,255,0.12),rgba(94,59,255,0.06));border:1px solid rgba(169,112,255,0.2);border-radius:24px;padding:44px 36px;">
+<tr><td align="center" style="padding-bottom:28px;"><span style="color:#b388ff;font-size:28px;font-weight:900;letter-spacing:2px;">SANRI</span></td></tr>
+<tr><td align="center" style="padding-bottom:16px;"><span style="color:#fff;font-size:22px;font-weight:700;">\u0130\u00e7eri\u011fin Haz\u0131r \u2728</span></td></tr>
+<tr><td style="padding-bottom:20px;"><p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;margin:0;">Merhaba,<br/><br/>Sat\u0131n al\u0131m\u0131n ba\u015far\u0131yla tamamland\u0131. \u0130\u00e7eri\u011fin a\u00e7\u0131ld\u0131 ve seni bekliyor.</p></td></tr>
+<tr><td style="padding-bottom:24px;"><div style="background:rgba(124,247,216,0.06);border:1px solid rgba(124,247,216,0.2);border-radius:14px;padding:18px 24px;">
+<p style="color:#7cf7d8;font-size:13px;font-weight:600;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">A\u00e7\u0131lan i\u00e7erik:</p>
+<p style="color:#e8e4f0;font-size:16px;margin:0;font-weight:600;">{safe(product_name)}</p></div></td></tr>
+<tr><td style="padding-bottom:24px;"><p style="color:rgba(255,255,255,0.65);font-size:14px;line-height:1.7;margin:0;"><strong style="color:#e8e4f0;">Nas\u0131l eri\u015firsin?</strong><br/><span style="color:#b388ff;">{safe(to)}</span> e-postas\u0131yla <a href="https://asksanri.com" style="color:#7cf7d8;text-decoration:none;font-weight:600;">asksanri.com</a>'a giri\u015f yap. \u0130\u00e7eri\u011fin otomatik a\u00e7\u0131lacak.</p></td></tr>
+<tr><td align="center" style="padding-bottom:28px;"><a href="https://asksanri.com" style="display:inline-block;padding:14px 40px;background:linear-gradient(135deg,#c8a0ff,#a07aff);color:#07080d;font-weight:700;font-size:15px;border-radius:12px;text-decoration:none;">Giri\u015f Yap</a></td></tr>
+<tr><td align="center"><p style="color:rgba(255,255,255,0.3);font-size:11px;margin:0;">Sanr\u0131 \u2014 Bilin\u00e7 ve Anlam Zekas\u0131<br/>Sorular\u0131n i\u00e7in: selin@asksanri.com</p></td></tr>
+</table></td></tr></table></body></html>"""
+    subj = f"Sanr\u0131 \u2014 {product_name} a\u00e7\u0131ld\u0131 \u2728"
+    return send_email(to, subj, html)
 
 
 def send_admin_bank_transfer_notification(

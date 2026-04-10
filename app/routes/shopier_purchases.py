@@ -555,6 +555,13 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
         except Exception:
             db.rollback()
 
+    if email_norm:
+        try:
+            from app.services.email_service import send_purchase_confirmation
+            send_purchase_confirmation(email_norm, cid)
+        except Exception as mail_err:
+            logger.warning("Shopier webhook: purchase confirmation email failed email=%s err=%s", email_norm, mail_err)
+
     return {
         "received": True,
         "action": "stored",
@@ -1175,6 +1182,11 @@ async def verify_by_email(body: VerifyByEmailBody, db: Session = Depends(get_db)
             return {"unlocked": True, "reason": "race_duplicate"}
 
         logger.info("verify-by-email: matched order=%s email=%s cid=%s", oid, em, cid)
+        try:
+            from app.services.email_service import send_purchase_confirmation
+            send_purchase_confirmation(em, cid)
+        except Exception as mail_err:
+            logger.warning("verify-by-email: confirmation email failed email=%s err=%s", em, mail_err)
         return {"unlocked": True, "reason": "pat_verified", "order_id": oid}
 
     return {"unlocked": False, "reason": "no_matching_paid_order"}
