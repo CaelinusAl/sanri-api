@@ -913,6 +913,7 @@ def check_purchase(
 @router.get("/my-purchases")
 def my_purchases(
     device_fp: str = "",
+    email: str = "",
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
@@ -929,6 +930,10 @@ def my_purchases(
     if user_email:
         conditions.append("LOWER(TRIM(email)) = :uemail")
         params["uemail"] = user_email
+    email_q = (email or "").strip().lower()
+    if email_q and "@" in email_q and email_q != (user_email or ""):
+        conditions.append("LOWER(TRIM(email)) = :qemail")
+        params["qemail"] = email_q
 
     if not conditions:
         return {"purchases": []}
