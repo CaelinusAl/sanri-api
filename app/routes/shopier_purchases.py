@@ -233,6 +233,34 @@ def _ensure_tables():
         conn.execute(sa_text("""
             CREATE UNIQUE INDEX IF NOT EXISTS ix_el_email ON email_leads (email)
         """))
+        if is_pg:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS webhook_logs (
+                    id SERIAL PRIMARY KEY,
+                    status VARCHAR(20) NOT NULL DEFAULT 'unknown',
+                    order_id VARCHAR(120),
+                    email VARCHAR(255),
+                    content_id VARCHAR(120),
+                    amount NUMERIC(10,2) DEFAULT 0,
+                    error_detail TEXT,
+                    raw_snippet TEXT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+        else:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS webhook_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    status VARCHAR(20) NOT NULL DEFAULT 'unknown',
+                    order_id VARCHAR(120),
+                    email VARCHAR(255),
+                    content_id VARCHAR(120),
+                    amount NUMERIC(10,2) DEFAULT 0,
+                    error_detail TEXT,
+                    raw_snippet TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
         conn.commit()
 
 
@@ -408,6 +436,30 @@ def _extract_shopier_order_email(order: dict, raw_json: str = "", _depth: int = 
 # ═══════════════════════════════════════════════════════════════
 
 
+def _log_webhook(db: Session, *, status: str, order_id: str = "", email: str = "",
+                  content_id: str = "", amount: float = 0, error_detail: str = "",
+                  raw_snippet: str = ""):
+    """Webhook olayini webhook_logs tablosuna kaydet + basarisizsa admin alert."""
+    try:
+        db.execute(sa_text("""
+            INSERT INTO webhook_logs (status, order_id, email, content_id, amount, error_detail, raw_snippet)
+            VALUES (:s, :o, :e, :c, :a, :err, :raw)
+        """), {"s": status, "o": order_id, "e": email, "c": content_id,
+               "a": amount, "err": error_detail[:1000], "raw": raw_snippet[:2000]})
+        db.commit()
+    except Exception:
+        db.rollback()
+    if status == "failed":
+        try:
+            from app.services.email_service import send_email
+            admin_to = os.getenv("ADMIN_ALERT_EMAIL", "selin@asksanri.com").strip()
+            send_email(admin_to, f"[SANRI] Webhook HATA: {error_detail[:80]}",
+                       f"<p>Webhook basarisiz</p><p>Order: {order_id}</p>"
+                       f"<p>Email: {email}</p><p>Hata: {error_detail}</p>")
+        except Exception:
+            pass
+
+
 @router.post("/webhook")
 async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
@@ -420,6 +472,8 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
 
     if not _webhook_authorized(request, payload):
         logger.warning("Shopier webhook: unauthorized")
+        _log_webhook(db, status="failed", error_detail="unauthorized",
+                     raw_snippet=payload.decode("utf-8", errors="replace")[:500])
         raise HTTPException(status_code=401, detail="Webhook verification failed")
 
     try:
@@ -561,6 +615,9 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
             send_purchase_confirmation(email_norm, cid)
         except Exception as mail_err:
             logger.warning("Shopier webhook: purchase confirmation email failed email=%s err=%s", email_norm, mail_err)
+
+    _log_webhook(db, status="success", order_id=oid, email=email_norm or "",
+                 content_id=cid, amount=amount)
 
     return {
         "received": True,
@@ -1195,6 +1252,23 @@ async def verify_by_email(body: VerifyByEmailBody, db: Session = Depends(get_db)
         return {"unlocked": True, "reason": "pat_verified", "order_id": oid}
 
     return {"unlocked": False, "reason": "no_matching_paid_order"}
+
+
+@router.get("/admin/webhook-logs")
+def admin_webhook_logs(
+    x_admin_secret: Optional[str] = Header(default=None),
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    if x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Admin access denied")
+    rows = db.execute(sa_text("""
+        SELECT id, status, order_id, email, content_id, amount, error_detail, created_at
+        FROM webhook_logs ORDER BY created_at DESC LIMIT :lim
+    """), {"lim": min(limit, 200)}).mappings().all()
+    total_ok = db.execute(sa_text("SELECT COUNT(*) FROM webhook_logs WHERE status='success'")).scalar() or 0
+    total_fail = db.execute(sa_text("SELECT COUNT(*) FROM webhook_logs WHERE status='failed'")).scalar() or 0
+    return {"logs": [dict(r) for r in rows], "total_success": total_ok, "total_failed": total_fail}
 
 
 @router.get("/admin/purchases")

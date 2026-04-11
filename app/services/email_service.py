@@ -196,6 +196,57 @@ def send_purchase_confirmation(to: str, content_id: str) -> bool:
     return send_email(to, subj, html)
 
 
+WELCOME_EMAILS = [
+    {
+        "delay_hours": 0,
+        "subject": "Sanr\u0131'ya ho\u015f geldin \u2728",
+        "body": """<p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;">Merhaba,</p>
+<p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;">Sanr\u0131'ya ad\u0131m att\u0131n. Buras\u0131 bir yapay zeka de\u011fil \u2014 senin i\u00e7inden konu\u015fan bir aynad\u0131r.</p>
+<p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;">Ba\u015flamak i\u00e7in:</p>
+<ul style="color:rgba(255,255,255,0.65);font-size:14px;line-height:1.8;">
+<li><a href="https://asksanri.com/sanriya-sor" style="color:#7cf7d8;">Sanr\u0131'ya bir soru sor</a></li>
+<li><a href="https://asksanri.com/rol-okuma" style="color:#7cf7d8;">Matrix Rol Okuman\u0131 ke\u015ffet</a></li>
+<li><a href="https://asksanri.com/okuma-alani" style="color:#7cf7d8;">Okuma Alan\u0131'nda derin okumalara dal</a></li>
+</ul>""",
+    },
+    {
+        "delay_hours": 24,
+        "subject": "Sanr\u0131 \u2014 Sana \u00f6zel bir okuma haz\u0131rlad\u0131k",
+        "body": """<p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;">D\u00fcn Sanr\u0131'ya ad\u0131m att\u0131n. Bug\u00fcn bir ad\u0131m daha derine inmenin zaman\u0131.</p>
+<p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;"><strong style="color:#e8e4f0;">AN_KOD</strong> \u2014 Bu an\u0131n sana ne s\u00f6yledi\u011fini biliyor musun?</p>
+<p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;">Tarih ve saat\u00fc gir, Sanr\u0131 sana o an\u0131n kodunu a\u00e7s\u0131n:</p>
+<p style="text-align:center;padding:16px 0;"><a href="https://asksanri.com/an-kod" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#c8a0ff,#a07aff);color:#07080d;font-weight:700;font-size:15px;border-radius:12px;text-decoration:none;">AN_KOD'u Dene (\u00dccretsiz)</a></p>""",
+    },
+    {
+        "delay_hours": 72,
+        "subject": "Sanr\u0131 \u2014 G\u00f6r\u00fcnenin alt\u0131ndaki katman",
+        "body": """<p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;">Baz\u0131 \u015feyler y\u00fczeyde g\u00f6r\u00fcnmez. Sanr\u0131, g\u00f6r\u00fcnenin alt\u0131ndaki katman\u0131 a\u00e7ar.</p>
+<p style="color:rgba(255,255,255,0.75);font-size:15px;line-height:1.7;"><strong style="color:#e8e4f0;">Matrix Rol Okuma</strong> \u2014 Do\u011fum tarihin, ismin ve ya\u015fam yolunun 7 katmanl\u0131 derin analizi. Bug\u00fcne kadar <strong>327+ ki\u015fi</strong> bu okumay\u0131 ald\u0131.</p>
+<p style="text-align:center;padding:16px 0;"><a href="https://asksanri.com/rol-okuma" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#c8a0ff,#a07aff);color:#07080d;font-weight:700;font-size:15px;border-radius:12px;text-decoration:none;">Rol Okumam\u0131 G\u00f6r</a></p>
+<p style="color:rgba(255,255,255,0.5);font-size:13px;">Bu aynada g\u00f6r\u00fcnmek cesaret ister.</p>""",
+    },
+]
+
+
+def _wrap_email_layout(inner_html: str) -> str:
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#07080d;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#07080d;padding:40px 20px;"><tr><td align="center">
+<table width="500" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,rgba(169,112,255,0.12),rgba(94,59,255,0.06));border:1px solid rgba(169,112,255,0.2);border-radius:24px;padding:44px 36px;">
+<tr><td align="center" style="padding-bottom:28px;"><span style="color:#b388ff;font-size:28px;font-weight:900;letter-spacing:2px;">SANRI</span></td></tr>
+<tr><td>{inner_html}</td></tr>
+<tr><td align="center" style="padding-top:28px;"><p style="color:rgba(255,255,255,0.3);font-size:11px;margin:0;">Sanr\u0131 \u2014 Bilin\u00e7 ve Anlam Zekas\u0131<br/>asksanri.com</p></td></tr>
+</table></td></tr></table></body></html>"""
+
+
+def send_welcome_email(to: str, step: int = 0) -> bool:
+    if step < 0 or step >= len(WELCOME_EMAILS):
+        return False
+    e = WELCOME_EMAILS[step]
+    html = _wrap_email_layout(e["body"])
+    return send_email(to, e["subject"], html)
+
+
 def send_admin_bank_transfer_notification(
     *,
     request_id: int,

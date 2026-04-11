@@ -137,6 +137,12 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 
     db.commit()
 
+    try:
+        from app.services.email_service import send_welcome_email
+        send_welcome_email(email, step=0)
+    except Exception:
+        pass
+
     token = create_access_token({"sub": str(user["id"])})
 
     return {
