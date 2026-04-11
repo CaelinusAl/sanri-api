@@ -261,6 +261,26 @@ def _ensure_tables():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+        if is_pg:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS welcome_email_log (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    step INTEGER NOT NULL DEFAULT 0,
+                    email VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+        else:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS welcome_email_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    step INTEGER NOT NULL DEFAULT 0,
+                    email VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
         conn.commit()
 
 
