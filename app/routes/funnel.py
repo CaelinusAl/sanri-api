@@ -55,6 +55,14 @@ VALID_EVENTS = {
     "anlasilma_to_frekans",
     "anlasilma_to_yanki",
     "anlasilma_to_okuma",
+    # Onboarding quiz funnel
+    "landing_view",
+    "intro_cta_click",
+    "quiz_start",
+    "quiz_step_complete",
+    "email_submit",
+    "quiz_result_view",
+    "result_cta_click",
 }
 
 

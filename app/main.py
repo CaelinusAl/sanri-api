@@ -61,6 +61,7 @@ from app.routes.deliverables import router as deliverables_router
 from app.routes.deliverables import admin_router as admin_deliverables_router
 from app.routes.anlasilma_alani import router as anlasilma_router
 from app.routes.daily_feeling import router as daily_feeling_router
+from app.routes.quiz import router as quiz_router
 
 
 
@@ -215,6 +216,7 @@ app.include_router(okuma_interactions_router)
 app.include_router(sanri_analyze_router)
 app.include_router(ankod_sanri_router)
 app.include_router(funnel_router)
+app.include_router(quiz_router)
 app.include_router(shopier_purchases_router)
 app.include_router(bank_transfer_router)
 app.include_router(bank_transfer_admin_router)
