@@ -21,6 +21,8 @@ from app.services.auth import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+ADMIN_EMAILS = {"selin@asksanri.com", "admin@asksanri.com"}
+
 
 # =========================================================
 # SCHEMAS
@@ -150,6 +152,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
         "user": {
             "id": user["id"],
             "email": user["email"],
+            "role": "free",
             "two_fa_enabled": user["two_fa_enabled"],
             "created_at": str(user["created_at"]) if user.get("created_at") else None,
         },
@@ -170,6 +173,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
                 id,
                 email,
                 password_hash,
+                role,
                 two_fa_enabled
             FROM users
             WHERE email = :email
@@ -191,6 +195,15 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
             "user_id": user["id"],
         }
 
+    role = user.get("role", "free")
+    if email in ADMIN_EMAILS and role != "admin":
+        db.execute(
+            text("UPDATE users SET role = 'admin' WHERE id = :uid"),
+            {"uid": user["id"]},
+        )
+        db.commit()
+        role = "admin"
+
     token = create_access_token({"sub": str(user["id"])})
 
     return {
@@ -198,6 +211,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         "user": {
             "id": user["id"],
             "email": user["email"],
+            "role": role,
             "two_fa_enabled": user["two_fa_enabled"],
         },
     }
@@ -334,6 +348,7 @@ def verify_2fa_login(payload: Verify2FALoginIn, db: Session = Depends(get_db)):
             SELECT
                 id,
                 email,
+                role,
                 two_fa_secret,
                 two_fa_enabled
             FROM users
@@ -364,6 +379,7 @@ def verify_2fa_login(payload: Verify2FALoginIn, db: Session = Depends(get_db)):
         "user": {
             "id": user["id"],
             "email": user["email"],
+            "role": user.get("role", "free"),
             "two_fa_enabled": user["two_fa_enabled"],
         },
     }
