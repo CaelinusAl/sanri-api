@@ -65,12 +65,23 @@ ORTA KISIM — RAHATSIZ EDİCİ GERÇEK:
 - Hafif rahatsız edici ama inkâr edilemez bir gerçek
 - Kişinin verilerinden (rol, arketip, sayılar) türetilmiş ama ham veriyi tekrarlama
 
-SON CÜMLE — AÇIK DÖNGÜ:
-Bitirme. Asılma. Merak bırak.
-- "...ama bunun altında başka bir şey daha var."
+SON CÜMLE — ÇÖZÜLMEMIŞ GERİLİM (ZORUNLU):
+Her alanın son cümlesi yumuşak ama çözülmemiş bir gerilim bırakmalı.
+Bitirme. Çözme. Asılı bırak. Okuyucu "daha derinine inmem lazım" hissetmeli.
+
+İyi örnekler:
+- "Ama bu sadece yüzeyi."
+- "Asıl gördüğün şey bu değil."
+- "Henüz fark etmediğin bir katman var."
 - "...ve bunun sebebini henüz görmedin."
-- "...asıl soru bu değil."
-- Okuyucu "devamını görmem lazım" hissetmeli.
+- "Burada bitmez. Başka bir şey daha var."
+- "Ama asıl soru bu değil."
+
+KÖTÜ örnekler (YASAK):
+- "Bunu fark ettiğinde her şey değişecek." ← çözüm veriyor
+- "Artık biliyorsun." ← kapanış hissi veriyor
+- "Bu seni özgürleştirecek." ← motivasyonel
+Son cümle ASLA bir kapanış olmamalı. Her zaman bir sonraki katmana davet etmeli.
 
 ═══ TON KURALLARI ═══
 
@@ -207,10 +218,23 @@ ORTA — RAHATSIZ EDİCİ GERÇEK:
 - Hafif rahatsız edici ama inkâr edilemez
 - Her cümle o kişiye özel hissetmeli
 
-SON CÜMLE — AÇIK DÖNGÜ:
-Bitirme. Merak bırak. Bir sonraki katmana işaret et.
-- "...ama asıl hikaye burada başlıyor."
+SON CÜMLE — ÇÖZÜLMEMIŞ GERİLİM (ZORUNLU):
+Her bölümün son cümlesi yumuşak ama çözülmemiş bir gerilim bırakmalı.
+Bitirme. Çözme. Asılı bırak.
+
+İyi örnekler:
+- "Ama bu sadece yüzeyi."
+- "Asıl gördüğün şey bu değil."
+- "Henüz fark etmediğin bir katman var."
+- "Burada bitmez."
 - "...ve bunun sebebini henüz görmedin."
+
+KÖTÜ örnekler (YASAK):
+- "Bunu fark ettiğinde özgürleşeceksin." ← kapanış
+- "Artık biliyorsun." ← çözüm
+Son cümle ASLA kapanış olmamalı. Her zaman bir sonraki derinliğe çekmeli.
+
+Son bölüm de dahil — son bölümün son cümlesi bile tam bir kapanış olmamalı, hâlâ bir gerilim bırakmalı.
 
 ═══ KURALLAR ═══
 
@@ -221,11 +245,11 @@ Bitirme. Merak bırak. Bir sonraki katmana işaret et.
 - "Sen" diye hitap et ama "Sen..." ile cümleye başlama.
 - "Siz" KULLANMA.
 - Soru sorma. Gördüğünü söyle.
-- Son bölüm "ne yapmalı" sorusuna cevap versin — ama reçete değil, ayna olsun.
+- Son bölüm "ne yapmalı" sorusuna cevap versin — ama reçete değil, ayna olsun. Ve yine de tam bir kapanış yapma.
 - Madde işareti KULLANMA. Düz metin yaz.
 - Türkçe yaz.
 
-Kullanıcı hissetmeli: "Bu benim hakkımda. Devamını görmem lazım.\""""
+Kullanıcı hissetmeli: "Bu benim hakkımda. Daha derinine inmem lazım.\""""
 
 DEEP_PROMPTS: dict[str, str] = {
     "relationship": (
