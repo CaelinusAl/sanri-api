@@ -3,10 +3,17 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import json
 import os
+from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+
+class UTF8JSONResponse(JSONResponse):
+    def render(self, content: Any) -> bytes:
+        return json.dumps(content, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
 
 from app.routes.admin import router as admin_router
 from app.routes.admin_accounting import router as admin_accounting_router
@@ -77,7 +84,7 @@ def _split_origins(v: str) -> list[str]:
     return out
 
 
-app = FastAPI()
+app = FastAPI(default_response_class=UTF8JSONResponse)
 
 @app.on_event("startup")
 async def _register_shopier_webhook_on_startup():
