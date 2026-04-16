@@ -17,6 +17,7 @@ class UTF8JSONResponse(JSONResponse):
 
 from app.routes.admin import router as admin_router
 from app.routes.admin_accounting import router as admin_accounting_router
+from app.routes.admin_sessions import router as admin_sessions_router
 from app.routes.bilinc_alani import router as bilinc_router
 from app.routes.auth import router as auth_router
 from app.routes.subscription import router as subscription_router
@@ -186,6 +187,7 @@ app.include_router(auth_router)
 app.include_router(subscription_router)
 app.include_router(admin_router)
 app.include_router(admin_accounting_router)
+app.include_router(admin_sessions_router)
 app.include_router(awakened_cities_router)
 app.include_router(matrix_rol_router)
 app.include_router(events_router)
