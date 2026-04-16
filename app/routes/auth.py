@@ -21,7 +21,7 @@ from app.services.auth import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-ADMIN_EMAILS = {"selin@asksanri.com", "admin@asksanri.com"}
+ADMIN_EMAILS = {"selin@asksanri.com", "admin@asksanri.com", "caelinusai.asksanri@gmail.com"}
 
 
 # =========================================================
