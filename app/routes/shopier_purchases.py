@@ -311,6 +311,57 @@ def _ensure_tables():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+        # ═══════════════════════════════════════════════════════════════
+        # pending_orders — Shopier redirect öncesi kayıt
+        # ═══════════════════════════════════════════════════════════════
+        # Frontend "Kartla Anında Öde"ye basınca, Shopier'a gitmeden önce
+        # buraya (email + content_id + product_id + device_fp) yazılır.
+        # Webhook geldiğinde email + zaman penceresi ile eşleştirilir:
+        #   • Ambiguous product ID'leri (45812975 gibi) çözmek için
+        #     webhook pending'in content_id'sini kullanır.
+        #   • Ödeme yapan kullanıcının device_fp'si otomatik bağlanır.
+        if is_pg:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS pending_orders (
+                    id SERIAL PRIMARY KEY,
+                    email VARCHAR(255) NOT NULL,
+                    content_id VARCHAR(120) NOT NULL,
+                    product_id VARCHAR(120),
+                    device_fp VARCHAR(64),
+                    platform_order_id VARCHAR(120),
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    shopier_order_id VARCHAR(120),
+                    matched_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+        else:
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS pending_orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email VARCHAR(255) NOT NULL,
+                    content_id VARCHAR(120) NOT NULL,
+                    product_id VARCHAR(120),
+                    device_fp VARCHAR(64),
+                    platform_order_id VARCHAR(120),
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    shopier_order_id VARCHAR(120),
+                    matched_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        conn.execute(sa_text("""
+            CREATE INDEX IF NOT EXISTS ix_po_email_created
+            ON pending_orders (email, created_at)
+        """))
+        conn.execute(sa_text("""
+            CREATE INDEX IF NOT EXISTS ix_po_status_created
+            ON pending_orders (status, created_at)
+        """))
+        conn.execute(sa_text("""
+            CREATE INDEX IF NOT EXISTS ix_po_platform_order
+            ON pending_orders (platform_order_id)
+        """))
         conn.commit()
 
 
@@ -321,6 +372,120 @@ def _sql_recent_purchase_window() -> str:
     if engine.dialect.name == "postgresql":
         return "created_at > NOW() - INTERVAL '45 days'"
     return "created_at > datetime('now', '-45 days')"
+
+
+# pending_orders için eşleşme penceresi — Shopier yönlendirme + ödeme akışı
+# genelde < 30 dk'da tamamlanır. Biraz emniyet payı için 6 saat.
+_PENDING_MATCH_WINDOW_MINUTES = int(os.getenv("SHOPIER_PENDING_WINDOW_MIN", "360"))
+
+
+def _sql_pending_window() -> str:
+    mins = _PENDING_MATCH_WINDOW_MINUTES
+    if engine.dialect.name == "postgresql":
+        return f"created_at > NOW() - INTERVAL '{mins} minutes'"
+    return f"created_at > datetime('now', '-{mins} minutes')"
+
+
+def _find_matching_pending_order(
+    db: Session,
+    *,
+    email: Optional[str],
+    product_id: str,
+    platform_order_id: str = "",
+) -> Optional[dict]:
+    """
+    Webhook'ta gelen order için en uygun pending kaydı:
+      1) platform_order_id tam eşleşme (en güvenilir — client tarafı key).
+      2) email + product_id + zaman penceresi.
+      3) email + zaman penceresi (product_id boşsa veya farklıysa).
+    Sadece status='pending' olanları seç. En yeni kayıt kazanır.
+    """
+    window = _sql_pending_window()
+    em = (email or "").strip().lower()
+
+    if platform_order_id:
+        row = db.execute(
+            sa_text(f"""
+                SELECT id, email, content_id, product_id, device_fp, platform_order_id
+                FROM pending_orders
+                WHERE platform_order_id = :pk
+                  AND status = 'pending'
+                  AND {window}
+                ORDER BY created_at DESC
+                LIMIT 1
+            """),
+            {"pk": platform_order_id},
+        ).mappings().first()
+        if row:
+            return dict(row)
+
+    if not em or "@" not in em:
+        return None
+
+    pid = (product_id or "").strip()
+    if pid:
+        row = db.execute(
+            sa_text(f"""
+                SELECT id, email, content_id, product_id, device_fp, platform_order_id
+                FROM pending_orders
+                WHERE LOWER(TRIM(email)) = :em
+                  AND product_id = :pid
+                  AND status = 'pending'
+                  AND {window}
+                ORDER BY created_at DESC
+                LIMIT 1
+            """),
+            {"em": em, "pid": pid},
+        ).mappings().first()
+        if row:
+            return dict(row)
+
+    row = db.execute(
+        sa_text(f"""
+            SELECT id, email, content_id, product_id, device_fp, platform_order_id
+            FROM pending_orders
+            WHERE LOWER(TRIM(email)) = :em
+              AND status = 'pending'
+              AND {window}
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"em": em},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def _mark_pending_matched(
+    db: Session, pending_id: int, shopier_order_id: str
+) -> None:
+    """Pending kaydını 'matched' olarak işaretle."""
+    try:
+        if engine.dialect.name == "postgresql":
+            db.execute(
+                sa_text("""
+                    UPDATE pending_orders
+                    SET status = 'matched',
+                        shopier_order_id = :oid,
+                        matched_at = NOW()
+                    WHERE id = :id AND status = 'pending'
+                """),
+                {"id": pending_id, "oid": shopier_order_id or None},
+            )
+        else:
+            db.execute(
+                sa_text("""
+                    UPDATE pending_orders
+                    SET status = 'matched',
+                        shopier_order_id = :oid,
+                        matched_at = CURRENT_TIMESTAMP
+                    WHERE id = :id AND status = 'pending'
+                """),
+                {"id": pending_id, "oid": shopier_order_id or None},
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("pending_orders: match update failed id=%s", pending_id)
 
 
 def _parse_amount(val: Any) -> float:
@@ -488,14 +653,19 @@ def _extract_shopier_order_email(order: dict, raw_json: str = "", _depth: int = 
 
 def _log_webhook(db: Session, *, status: str, order_id: str = "", email: str = "",
                   content_id: str = "", amount: float = 0, error_detail: str = "",
-                  raw_snippet: str = ""):
-    """Webhook olayini webhook_logs tablosuna kaydet + basarisizsa admin alert."""
+                  raw_snippet: str = "", pending_match: str = ""):
+    """
+    Webhook olayini webhook_logs tablosuna kaydet + basarisizsa admin alert.
+    pending_match: 'matched:<id>' | 'no_pending' | 'no_email' gibi özet tag.
+    """
     try:
+        suffix = f"[pending={pending_match}] " if pending_match else ""
         db.execute(sa_text("""
             INSERT INTO webhook_logs (status, order_id, email, content_id, amount, error_detail, raw_snippet)
             VALUES (:s, :o, :e, :c, :a, :err, :raw)
         """), {"s": status, "o": order_id, "e": email, "c": content_id,
-               "a": amount, "err": error_detail[:1000], "raw": raw_snippet[:2000]})
+               "a": amount, "err": (suffix + (error_detail or ""))[:1000],
+               "raw": raw_snippet[:2000]})
         db.commit()
     except Exception:
         db.rollback()
@@ -581,17 +751,87 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
     except ValueError:
         email_norm = None
 
+    # ───────── IDEMPOTENCY: aynı Shopier order_id ile 2. kez gelirse hızlı çık ─────────
     existing = db.execute(
         sa_text("SELECT id FROM shopier_purchases WHERE shopier_order_id = :oid"),
         {"oid": oid},
     ).first()
 
     if existing:
-        logger.info("Shopier webhook: duplicate order_id=%s", oid)
+        logger.info("Shopier webhook: duplicate order_id=%s (idempotent skip)", oid)
+        _log_webhook(db, status="duplicate", order_id=oid,
+                     email=email_norm or "", content_id=cid, amount=amount,
+                     pending_match="skipped_duplicate")
         return {"received": True, "action": "duplicate"}
 
+    # ───────── PENDING ORDER EŞLEŞMESİ ─────────
+    # Frontend Shopier'a yönlenmeden önce prepare-order çağrısıyla pending kaydetmişse,
+    # buradan (email + product_id veya platform_order_id) ile eşleştirip:
+    #   • Ambiguous product ID durumunda doğru content_id'yi alırız.
+    #   • Pending'deki device_fp'yi satın alıma bağlarız → kullanıcı o cihazda
+    #     otomatik unlock görür.
+    platform_key = ""
+    try:
+        pk_val = (
+            order.get("platform_order_id")
+            or order.get("platformOrderId")
+            or order.get("referenceId")
+            or order.get("reference")
+            or ""
+        )
+        if isinstance(pk_val, str):
+            platform_key = pk_val.strip()
+    except Exception:
+        platform_key = ""
+
+    pending = _find_matching_pending_order(
+        db,
+        email=email_norm,
+        product_id=raw_pid,
+        platform_order_id=platform_key,
+    )
+
+    pending_device_fp: Optional[str] = None
+    pending_tag = "no_email" if not email_norm else "no_pending"
+
+    if pending:
+        pending_tag = f"matched:{pending['id']}"
+        logger.info(
+            "Shopier webhook: PENDING MATCH pending_id=%s email=%s pending_cid=%s "
+            "webhook_cid=%s pending_pid=%s webhook_pid=%s",
+            pending["id"],
+            email_norm,
+            pending.get("content_id"),
+            cid,
+            pending.get("product_id"),
+            raw_pid,
+        )
+        pending_cid = str(pending.get("content_id") or "").strip()
+        if pending_cid:
+            if cid in ("", "unknown") or cid != pending_cid:
+                logger.info(
+                    "Shopier webhook: content_id overridden by pending "
+                    "webhook_resolved=%s pending=%s order_id=%s",
+                    cid, pending_cid, oid,
+                )
+                cid = pending_cid
+        fp_val = (pending.get("device_fp") or "").strip()
+        if fp_val:
+            pending_device_fp = fp_val
+    else:
+        logger.info(
+            "Shopier webhook: no matching pending order email=%s pid=%s oid=%s",
+            email_norm or "(none)", raw_pid, oid,
+        )
+
     meta = json.dumps(
-        {"title": title, "event": event_type, "enriched": bool(SHOPIER_PAT)},
+        {
+            "title": title,
+            "event": event_type,
+            "enriched": bool(SHOPIER_PAT),
+            "pending_order_id": pending.get("id") if pending else None,
+            "pending_content_id": pending.get("content_id") if pending else None,
+        },
         ensure_ascii=False,
     )
 
@@ -599,11 +839,11 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
         db.execute(
             sa_text("""
                 INSERT INTO shopier_purchases (
-                    content_id, product_id, email, amount, currency, source,
+                    content_id, product_id, device_fp, email, amount, currency, source,
                     shopier_order_id, status, metadata_json,
                     order_number, product_name, product_code, event_type, payment_status, raw_payload
                 ) VALUES (
-                    :cid, :pid, :email, :amount, :currency, 'webhook',
+                    :cid, :pid, :fp, :email, :amount, :currency, 'webhook',
                     :oid, 'completed', :meta,
                     :ordernum, :pname, :pcode, :ev, :pstat, :rawp
                 )
@@ -611,6 +851,7 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
             {
                 "cid": cid,
                 "pid": raw_pid or None,
+                "fp": pending_device_fp,
                 "email": email_norm,
                 "amount": amount,
                 "currency": currency or "TRY",
@@ -628,7 +869,17 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
     except IntegrityError:
         db.rollback()
         logger.info("Shopier webhook: insert race duplicate order_id=%s", oid)
+        _log_webhook(db, status="duplicate", order_id=oid,
+                     email=email_norm or "", content_id=cid, amount=amount,
+                     pending_match=pending_tag + "+race")
         return {"received": True, "action": "duplicate"}
+
+    if pending:
+        _mark_pending_matched(db, int(pending["id"]), oid)
+        logger.info(
+            "Shopier webhook: pending #%s marked matched oid=%s",
+            pending["id"], oid,
+        )
 
     logger.info(
         "contact_email_audit order_id=%s received_email=%r stored_email=%r source_flow=%s",
@@ -667,12 +918,21 @@ async def shopier_webhook(request: Request, db: Session = Depends(get_db)):
             logger.warning("Shopier webhook: purchase confirmation email failed email=%s err=%s", email_norm, mail_err)
 
     _log_webhook(db, status="success", order_id=oid, email=email_norm or "",
-                 content_id=cid, amount=amount)
+                 content_id=cid, amount=amount, pending_match=pending_tag)
+
+    logger.info(
+        "Shopier webhook UNLOCK: oid=%s cid=%s email=%s device_fp=%s pending_match=%s",
+        oid, cid, email_norm or "(none)",
+        (pending_device_fp or "(none)"), pending_tag,
+    )
 
     return {
         "received": True,
         "action": "stored",
+        "content_id": cid,
         "email_stored": bool(email_norm),
+        "device_bound": bool(pending_device_fp),
+        "pending_match": pending_tag,
     }
 
 
@@ -813,6 +1073,126 @@ async def shopier_list_webhooks(
     if err:
         raise HTTPException(status_code=502, detail=err)
     return {"webhooks": items, "count": len(items)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# POST /shopier/prepare-order
+#   Frontend Shopier'a yönlenmeden HEMEN önce çağırır.
+#   Webhook geldiğinde email + product_id + zaman penceresi ile eşleştirilir:
+#     • Ambiguous product ID'yi doğru content_id'ye map eder.
+#     • device_fp'yi satın alıma otomatik bağlar.
+#   Auth gerektirmez (guest checkout desteklenir); yalnızca email zorunlu.
+# ═══════════════════════════════════════════════════════════════
+
+
+class PrepareOrderBody(BaseModel):
+    email: EmailStr
+    content_id: str
+    product_id: Optional[str] = ""
+    device_fp: Optional[str] = ""
+    platform_order_id: Optional[str] = ""
+
+
+@router.post("/prepare-order")
+def prepare_order(body: PrepareOrderBody, db: Session = Depends(get_db)):
+    try:
+        em = normalize_contact_email(str(body.email))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_email", "message": "Geçerli bir e-posta gerekli."},
+        )
+
+    cid = (body.content_id or "").strip()
+    if not cid:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_content_id", "message": "content_id gerekli."},
+        )
+
+    pid = (body.product_id or "").strip() or None
+    fp = (body.device_fp or "").strip() or None
+    platform_key = (body.platform_order_id or "").strip() or None
+
+    # Aynı (email, content_id) için son 10 dk içinde açık pending varsa onu güncelle;
+    # yoksa yeni satır yaz. Böylece kullanıcı "Satın al"a çift tıklasa bile tek kayıt.
+    existing = db.execute(
+        sa_text(f"""
+            SELECT id FROM pending_orders
+            WHERE LOWER(TRIM(email)) = :em
+              AND content_id = :cid
+              AND status = 'pending'
+              AND {_sql_pending_window()}
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"em": em, "cid": cid},
+    ).first()
+
+    if existing:
+        pending_id = int(existing[0])
+        db.execute(
+            sa_text("""
+                UPDATE pending_orders
+                SET product_id = COALESCE(:pid, product_id),
+                    device_fp = COALESCE(:fp, device_fp),
+                    platform_order_id = COALESCE(:pk, platform_order_id)
+                WHERE id = :id
+            """),
+            {"pid": pid, "fp": fp, "pk": platform_key, "id": pending_id},
+        )
+        db.commit()
+        logger.info(
+            "prepare-order: refreshed pending_id=%s email=%s cid=%s pid=%s fp=%s",
+            pending_id, em, cid, pid, "yes" if fp else "no",
+        )
+        return {
+            "ok": True,
+            "pending_order_id": pending_id,
+            "action": "refreshed",
+        }
+
+    try:
+        result = db.execute(
+            sa_text("""
+                INSERT INTO pending_orders (
+                    email, content_id, product_id, device_fp,
+                    platform_order_id, status
+                ) VALUES (
+                    :em, :cid, :pid, :fp, :pk, 'pending'
+                )
+                RETURNING id
+            """) if engine.dialect.name == "postgresql" else sa_text("""
+                INSERT INTO pending_orders (
+                    email, content_id, product_id, device_fp,
+                    platform_order_id, status
+                ) VALUES (
+                    :em, :cid, :pid, :fp, :pk, 'pending'
+                )
+            """),
+            {"em": em, "cid": cid, "pid": pid, "fp": fp, "pk": platform_key},
+        )
+        if engine.dialect.name == "postgresql":
+            pending_id = int(result.scalar() or 0)
+        else:
+            pending_id = int(result.lastrowid or 0)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("prepare-order: insert failed email=%s cid=%s", em, cid)
+        raise HTTPException(status_code=500, detail="db_error")
+
+    logger.info(
+        "prepare-order: CREATED pending_id=%s email=%s cid=%s pid=%s fp=%s pk=%s",
+        pending_id, em, cid, pid, "yes" if fp else "no",
+        platform_key or "(none)",
+    )
+
+    return {
+        "ok": True,
+        "pending_order_id": pending_id,
+        "action": "created",
+    }
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1357,6 +1737,52 @@ class AdminGrantBody(BaseModel):
     content_id: str
     amount: float = 0
     note: str = ""
+
+
+@router.get("/admin/pending-orders")
+def admin_pending_orders(
+    x_admin_secret: Optional[str] = Header(default=None),
+    limit: int = 100,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """pending_orders tablosunu incele — debug/destek için."""
+    if x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Admin access denied")
+
+    lim = max(1, min(int(limit or 100), 500))
+    where = ""
+    params: dict[str, Any] = {"lim": lim}
+    if status in ("pending", "matched", "expired"):
+        where = "WHERE status = :st"
+        params["st"] = status
+
+    rows = db.execute(
+        sa_text(f"""
+            SELECT id, email, content_id, product_id, device_fp,
+                   platform_order_id, status, shopier_order_id,
+                   matched_at, created_at
+            FROM pending_orders
+            {where}
+            ORDER BY created_at DESC
+            LIMIT :lim
+        """),
+        params,
+    ).mappings().all()
+
+    stats = db.execute(
+        sa_text("""
+            SELECT status, COUNT(*) AS cnt
+            FROM pending_orders
+            GROUP BY status
+        """)
+    ).mappings().all()
+
+    return {
+        "pending_orders": [dict(r) for r in rows],
+        "stats": {r["status"]: int(r["cnt"]) for r in stats},
+        "window_minutes": _PENDING_MATCH_WINDOW_MINUTES,
+    }
 
 
 @router.post("/admin/grant-unlock")
