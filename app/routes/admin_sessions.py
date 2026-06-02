@@ -438,6 +438,60 @@ def theme_distribution(
 
 
 # ═══════════════════════════════════════════════
+# GATE 33 — DERİNLEŞME DÖNÜŞÜM HUNİSİ
+# deepen_offer_shown vs deepen_offer_accepted (tema bazında).
+# ═══════════════════════════════════════════════
+
+@router.get("/gate33")
+def gate33_funnel(
+    period: str = Query(default="30d"),
+    admin=Depends(_require_jwt),
+    db: Session = Depends(get_db),
+):
+    """Tema bazında derinleşme davetinin gösterim / kabul / dönüşüm oranı."""
+    days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "all": 3650}.get(period, 30)
+    since = _utc_now() - timedelta(days=days)
+
+    rows = db.execute(
+        sa_text("""
+            SELECT COALESCE(meta->>'theme','diger') AS theme,
+                   SUM(CASE WHEN action = 'deepen_offer_shown' THEN 1 ELSE 0 END) AS shown,
+                   SUM(CASE WHEN action = 'deepen_offer_accepted' THEN 1 ELSE 0 END) AS accepted
+            FROM events
+            WHERE action IN ('deepen_offer_shown','deepen_offer_accepted')
+              AND created_at >= :s
+            GROUP BY theme
+            ORDER BY shown DESC
+        """),
+        {"s": since},
+    ).mappings().all()
+
+    by_theme = []
+    total_shown = 0
+    total_accepted = 0
+    for r in rows:
+        shown = int(r["shown"] or 0)
+        accepted = int(r["accepted"] or 0)
+        total_shown += shown
+        total_accepted += accepted
+        by_theme.append({
+            "theme": r["theme"],
+            "label": _THEME_LABELS.get(r["theme"], r["theme"]),
+            "shown": shown,
+            "accepted": accepted,
+            "conversion_pct": round(accepted / shown * 100, 1) if shown else 0,
+        })
+
+    return {
+        "period": period,
+        "total_offers_shown": total_shown,
+        "total_offers_accepted": total_accepted,
+        "overall_conversion_pct": round(total_accepted / total_shown * 100, 1) if total_shown else 0,
+        "by_theme": by_theme,
+    }
+
+
+# ═══════════════════════════════════════════════
 # USER JOURNEY DETAIL
 # ═══════════════════════════════════════════════
 

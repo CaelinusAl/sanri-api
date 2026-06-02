@@ -31,6 +31,13 @@ class AskResponse(BaseModel):
     message: Optional[str] = None
     steps: Optional[List[str]] = None
     closing: Optional[str] = None
+    # Gate 33 — tekrarlayan temada gösterilen derinleşme daveti (yoksa None).
+    deepen: Optional[dict] = None
+
+
+class DeepenAcceptIn(BaseModel):
+    theme: str
+    session_id: str = "default"
 
 
 def parse_user_id(raw_value: str, allow_anonymous: bool = False) -> int:
@@ -70,6 +77,36 @@ def ask(
         system_context=req.system_context,
         gate_name=req.gate_name,
     )
+
+
+@router.post("/deepen/accept")
+def deepen_accept(
+    req: DeepenAcceptIn,
+    x_user_id: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Gate 33 dönüşüm noktası: kullanıcı derinleşme davetini kabul etti.
+    Ölçüm için loglanır (gösterilen vs. kabul edilen = dönüşüm oranı)."""
+    import uuid as _uuid
+    from app.models.event import Event
+
+    user_id = parse_user_id(x_user_id, allow_anonymous=True)
+    try:
+        db.add(Event(
+            id=str(_uuid.uuid4()),
+            user_id=str(user_id) if user_id else None,
+            action="deepen_offer_accepted",
+            domain="gate33",
+            meta={"theme": req.theme, "session_id": req.session_id},
+        ))
+        db.commit()
+    except Exception as e:
+        print("DEEPEN ACCEPT LOG ERROR =", repr(e))
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    return {"ok": True, "theme": req.theme}
 
 
 @router.get("/memory")

@@ -8,7 +8,7 @@ from sqlalchemy import text
 from app.prompts.system_base import build_system_prompt, SANRI_PROMPT_VERSION
 from app.models.event import Event
 from app.services.ai_service import get_client, generate_sanri_response
-from app.services.theme_classifier import classify_theme
+from app.services.theme_classifier import classify_theme, theme_label
 from app.services.memory_service import load_memory, save_memory
 from app.services.profile_service import (
     load_profile,
@@ -18,6 +18,10 @@ from app.services.profile_service import (
 )
 
 MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
+
+# Gate 33 — derinleşme alanı. Aynı tema bir cihaz/session içinde bu kadar kez
+# döndüğünde "birlikte derinleş" daveti çıkar (satış değil, içe bakış daveti).
+DEEPEN_THRESHOLD = int(os.getenv("DEEPEN_THRESHOLD", "3"))
 
 
 def normalize_ending(text_resp: str) -> str:
@@ -55,9 +59,9 @@ def get_daily_message_count(db: Session, user_id: int) -> int:
         return 0
 
 
-def tag_message_theme(db: Session, user_id: int, user_message: str, session_id: str, lang: str) -> None:
+def tag_message_theme(db: Session, user_id: int, user_message: str, session_id: str, lang: str) -> str | None:
     """FAZ 2: kullanıcı mesajını yaşam temasına göre etiketle ve events'e yaz.
-    Chat akışını asla bozmaz (hata yutulur)."""
+    Sınıflandırılan temayı döndürür. Chat akışını asla bozmaz (hata yutulur)."""
     try:
         theme = classify_theme(user_message)
         ev = Event(
@@ -69,12 +73,87 @@ def tag_message_theme(db: Session, user_id: int, user_message: str, session_id: 
         )
         db.add(ev)
         db.commit()
+        return theme
     except Exception as e:
         print("THEME TAG ERROR =", repr(e))
         try:
             db.rollback()
         except Exception:
             pass
+        return None
+
+
+def _session_theme_count(db: Session, user_id: int, session_id: str, theme: str) -> int:
+    """Bu cihaz/session içinde verilen temanın kaç kez işlendiği (şimdiki dahil)."""
+    try:
+        row = db.execute(
+            text("""
+                SELECT COUNT(*) AS c
+                FROM events
+                WHERE action = 'message_theme'
+                  AND meta->>'theme' = :theme
+                  AND (user_id = :uid OR meta->>'session_id' = :sid)
+            """),
+            {"theme": theme, "uid": str(user_id) if user_id else None, "sid": session_id},
+        ).mappings().first()
+        return int(row["c"]) if row and row.get("c") is not None else 0
+    except Exception as e:
+        print("THEME COUNT ERROR =", repr(e))
+        return 0
+
+
+def build_deepen_offer(db: Session, user_id: int, session_id: str, theme: str | None, lang: str) -> dict | None:
+    """Gate 33 derinleşme daveti. Aynı tema yeterince tekrarlandıysa,
+    satış dili OLMADAN bir 'birlikte derinleş' alanı önerir.
+    Teklif gösterildiğinde ölçüm için event loglanır (dönüşüm noktası testi)."""
+    if not theme or theme == "diger":
+        return None
+
+    count = _session_theme_count(db, user_id, session_id, theme)
+    if count < DEEPEN_THRESHOLD:
+        return None
+
+    label = theme_label(theme)
+    tr = (lang or "tr").lower() == "tr"
+    if tr:
+        offer = {
+            "theme": theme,
+            "label": label,
+            "count": count,
+            "title": f"{label} son günlerde sık dönüyor",
+            "message": "İstersen bu temayı birlikte biraz daha derinden açabiliriz.",
+            "cta": "Birlikte derinleş",
+            "gate": "33",
+        }
+    else:
+        offer = {
+            "theme": theme,
+            "label": label,
+            "count": count,
+            "title": f"{label} keeps returning lately",
+            "message": "If you'd like, we can explore this theme together a little deeper.",
+            "cta": "Go deeper together",
+            "gate": "33",
+        }
+
+    # Ölçüm: teklif hangi temada, kaç tekrar sonrası gösterildi.
+    try:
+        db.add(Event(
+            id=str(uuid.uuid4()),
+            user_id=str(user_id) if user_id else None,
+            action="deepen_offer_shown",
+            domain="gate33",
+            meta={"theme": theme, "session_id": session_id, "count": count},
+        ))
+        db.commit()
+    except Exception as e:
+        print("DEEPEN OFFER LOG ERROR =", repr(e))
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+    return offer
 
 
 def check_is_premium(db: Session, user_id: int) -> bool:
@@ -128,7 +207,9 @@ def run_sanri(
         }
 
     # FAZ 2: yaşam teması etiketle (aşk, ayrılık, rüya, kaygı...).
-    tag_message_theme(db, user_id, user_message, session_id, lang)
+    theme = tag_message_theme(db, user_id, user_message, session_id, lang)
+    # Gate 33: tema tekrarlanıyorsa derinleşme daveti hazırla.
+    deepen = build_deepen_offer(db, user_id, session_id, theme, lang)
 
     memory_text = load_memory(db, user_id)
     existing_profile = load_profile(db, user_id)
@@ -247,4 +328,5 @@ Now respond:
         "message": None,
         "steps": None,
         "closing": None,
+        "deepen": deepen,
     }
