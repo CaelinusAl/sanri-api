@@ -337,6 +337,18 @@ def faz1_metrics(
         "SELECT COUNT(*) FROM events WHERE action = 'message_sent' AND created_at >= :s"
     ))
 
+    # Özellik/sekme açılışları (dream_open, relationship_open, journal_open, home_open).
+    open_rows = db.execute(
+        sa_text("""
+            SELECT action, COUNT(*) AS cnt
+            FROM events
+            WHERE action IN ('home_open','journal_open','dream_open','relationship_open')
+              AND created_at >= :s
+            GROUP BY action ORDER BY cnt DESC
+        """),
+        {"s": since},
+    ).mappings().all()
+
     return {
         "period": period,
         "activation": {
@@ -357,6 +369,10 @@ def faz1_metrics(
         },
         "by_context": [{"ctx": r["ctx"], "messages": int(r["messages"])} for r in ctx_rows],
         "top_tabs": [{"screen": r["screen"], "views": int(r["views"])} for r in tab_rows],
+        "feature_opens": [
+            {"feature": r["action"].replace("_open", ""), "opens": int(r["cnt"])}
+            for r in open_rows
+        ],
     }
 
 
