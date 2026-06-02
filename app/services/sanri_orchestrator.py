@@ -1,11 +1,14 @@
 import json
 import os
+import uuid
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.prompts.system_base import build_system_prompt, SANRI_PROMPT_VERSION
+from app.models.event import Event
 from app.services.ai_service import get_client, generate_sanri_response
+from app.services.theme_classifier import classify_theme
 from app.services.memory_service import load_memory, save_memory
 from app.services.profile_service import (
     load_profile,
@@ -50,6 +53,28 @@ def get_daily_message_count(db: Session, user_id: int) -> int:
     except Exception as e:
         print("SANRI DAILY COUNT ERROR =", repr(e))
         return 0
+
+
+def tag_message_theme(db: Session, user_id: int, user_message: str, session_id: str, lang: str) -> None:
+    """FAZ 2: kullanıcı mesajını yaşam temasına göre etiketle ve events'e yaz.
+    Chat akışını asla bozmaz (hata yutulur)."""
+    try:
+        theme = classify_theme(user_message)
+        ev = Event(
+            id=str(uuid.uuid4()),
+            user_id=str(user_id) if user_id else None,
+            action="message_theme",
+            domain="bilinc-alani",
+            meta={"theme": theme, "session_id": session_id, "lang": lang},
+        )
+        db.add(ev)
+        db.commit()
+    except Exception as e:
+        print("THEME TAG ERROR =", repr(e))
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 def check_is_premium(db: Session, user_id: int) -> bool:
@@ -101,6 +126,9 @@ def run_sanri(
             "steps": None,
             "closing": None,
         }
+
+    # FAZ 2: yaşam teması etiketle (aşk, ayrılık, rüya, kaygı...).
+    tag_message_theme(db, user_id, user_message, session_id, lang)
 
     memory_text = load_memory(db, user_id)
     existing_profile = load_profile(db, user_id)

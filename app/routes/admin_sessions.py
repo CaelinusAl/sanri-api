@@ -262,6 +262,182 @@ def retention(
 
 
 # ═══════════════════════════════════════════════
+# FAZ 1 — ÜRÜN METRİKLERİ
+# Strateji: ilk 100 kullanıcı, davranış gözlemi.
+# Takip: ilk soru soruldu mu · sekme/günlük kullanımı · tekrar gelme ·
+#        ortalama konuşma süresi · en çok kullanılan sekme.
+# Anonim kimlik: COALESCE(user_id, meta->>'session_id').
+# ═══════════════════════════════════════════════
+
+@router.get("/faz1")
+def faz1_metrics(
+    period: str = Query(default="30d"),
+    admin=Depends(_require_jwt),
+    db: Session = Depends(get_db),
+):
+    days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "all": 3650}.get(period, 30)
+    since = _utc_now() - timedelta(days=days)
+    ident = "COALESCE(user_id, meta->>'session_id')"
+
+    def scalar(sql: str) -> float:
+        try:
+            return float(db.execute(sa_text(sql), {"s": since}).scalar() or 0)
+        except Exception:
+            return 0.0
+
+    # 1) Aktivasyon: ilk soruyu soran tekil kullanıcı / toplam açan tekil kullanıcı
+    openers = int(scalar(
+        f"SELECT COUNT(DISTINCT {ident}) FROM events WHERE action IN ('app_open','session_start') AND created_at >= :s"
+    ))
+    asked = int(scalar(
+        f"SELECT COUNT(DISTINCT {ident}) FROM events WHERE action = 'first_question_asked' AND created_at >= :s"
+    ))
+    activation_rate = round((asked / max(openers, 1)) * 100, 1)
+
+    # 2) Tekrar gelme: app_open içinde is_returning = true olan tekil kullanıcı
+    returning_users = int(scalar(
+        f"SELECT COUNT(DISTINCT {ident}) FROM events WHERE action = 'app_open' AND meta->>'is_returning' = 'true' AND created_at >= :s"
+    ))
+    return_rate = round((returning_users / max(openers, 1)) * 100, 1)
+
+    # 3) Ortalama konuşma süresi + ortalama mesaj sayısı (conversation_ended)
+    avg_convo_sec = scalar(
+        "SELECT COALESCE(AVG((meta->>'duration_sec')::float),0) FROM events WHERE action = 'conversation_ended' AND meta->>'duration_sec' IS NOT NULL AND created_at >= :s"
+    )
+    avg_msg_per_convo = scalar(
+        "SELECT COALESCE(AVG((meta->>'message_count')::float),0) FROM events WHERE action = 'conversation_ended' AND meta->>'message_count' IS NOT NULL AND created_at >= :s"
+    )
+    total_convos = int(scalar(
+        "SELECT COUNT(*) FROM events WHERE action = 'conversation_ended' AND created_at >= :s"
+    ))
+
+    # 4) Sekme/bağlam kullanımı (message_sent → meta.ctx): home/journal/dream/relationship
+    ctx_rows = db.execute(
+        sa_text("""
+            SELECT COALESCE(meta->>'ctx','bilinmiyor') AS ctx, COUNT(*) AS messages
+            FROM events
+            WHERE action = 'message_sent' AND created_at >= :s
+            GROUP BY ctx ORDER BY messages DESC
+        """),
+        {"s": since},
+    ).mappings().all()
+
+    # 5) En çok kullanılan sekme (screen_view → meta.screen)
+    tab_rows = db.execute(
+        sa_text("""
+            SELECT COALESCE(meta->>'screen', domain, 'bilinmiyor') AS screen, COUNT(*) AS views
+            FROM events
+            WHERE action = 'screen_view' AND created_at >= :s
+            GROUP BY screen ORDER BY views DESC LIMIT 15
+        """),
+        {"s": since},
+    ).mappings().all()
+
+    total_messages = int(scalar(
+        "SELECT COUNT(*) FROM events WHERE action = 'message_sent' AND created_at >= :s"
+    ))
+
+    return {
+        "period": period,
+        "activation": {
+            "users_opened": openers,
+            "users_asked_first_question": asked,
+            "activation_rate_pct": activation_rate,
+        },
+        "retention": {
+            "returning_users": returning_users,
+            "return_rate_pct": return_rate,
+        },
+        "conversation": {
+            "total_conversations": total_convos,
+            "total_messages": total_messages,
+            "avg_duration_sec": round(avg_convo_sec, 1),
+            "avg_duration_min": round(avg_convo_sec / 60, 1) if avg_convo_sec else 0,
+            "avg_messages_per_conversation": round(avg_msg_per_convo, 1),
+        },
+        "by_context": [{"ctx": r["ctx"], "messages": int(r["messages"])} for r in ctx_rows],
+        "top_tabs": [{"screen": r["screen"], "views": int(r["views"])} for r in tab_rows],
+    }
+
+
+# ═══════════════════════════════════════════════
+# FAZ 2 — YAŞAM TEMASI DAĞILIMI
+# message_theme event'lerini (meta.theme) raporlar.
+# ═══════════════════════════════════════════════
+
+_THEME_LABELS = {
+    "ask": "Aşk",
+    "ayrilik": "Ayrılık",
+    "ruya": "Rüya",
+    "kaygi": "Kaygı",
+    "kararsizlik": "Kararsızlık",
+    "hayat_amaci": "Hayat Amacı",
+    "para": "Para",
+    "aile": "Aile",
+    "yalnizlik": "Yalnızlık",
+    "ozdeger": "Öz Değer",
+    "diger": "Diğer",
+}
+
+
+@router.get("/themes")
+def theme_distribution(
+    period: str = Query(default="30d"),
+    admin=Depends(_require_jwt),
+    db: Session = Depends(get_db),
+):
+    """En çok konuşulan yaşam temaları + günlük trend."""
+    days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "all": 3650}.get(period, 30)
+    since = _utc_now() - timedelta(days=days)
+
+    rows = db.execute(
+        sa_text("""
+            SELECT COALESCE(meta->>'theme','diger') AS theme, COUNT(*) AS cnt
+            FROM events
+            WHERE action = 'message_theme' AND created_at >= :s
+            GROUP BY theme ORDER BY cnt DESC
+        """),
+        {"s": since},
+    ).mappings().all()
+
+    total = sum(int(r["cnt"]) for r in rows) or 1
+
+    distribution = [
+        {
+            "theme": r["theme"],
+            "label": _THEME_LABELS.get(r["theme"], r["theme"]),
+            "count": int(r["cnt"]),
+            "pct": round(int(r["cnt"]) / total * 100, 1),
+        }
+        for r in rows
+    ]
+
+    # Günlük tema trendi (ısı haritası / çizgi için).
+    trend = db.execute(
+        sa_text("""
+            SELECT DATE(created_at) AS day,
+                   COALESCE(meta->>'theme','diger') AS theme,
+                   COUNT(*) AS cnt
+            FROM events
+            WHERE action = 'message_theme' AND created_at >= :s
+            GROUP BY day, theme ORDER BY day
+        """),
+        {"s": since},
+    ).mappings().all()
+
+    return {
+        "period": period,
+        "total_tagged_messages": sum(int(r["cnt"]) for r in rows),
+        "distribution": distribution,
+        "top_theme": distribution[0] if distribution else None,
+        "trend": [
+            {"day": str(r["day"]), "theme": r["theme"], "count": int(r["cnt"])}
+            for r in trend
+        ],
+    }
+
+
+# ═══════════════════════════════════════════════
 # USER JOURNEY DETAIL
 # ═══════════════════════════════════════════════
 
