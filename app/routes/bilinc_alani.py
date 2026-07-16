@@ -20,6 +20,7 @@ class AskRequest(BaseModel):
     domain: str = "auto"
     system_context: Optional[str] = None
     gate_name: Optional[str] = None
+    conversation_context: Optional[List[dict]] = None
 
 
 class AskResponse(BaseModel):
@@ -76,6 +77,7 @@ def ask(
         lang=req.lang,
         system_context=req.system_context,
         gate_name=req.gate_name,
+        conversation_context=req.conversation_context,
     )
 
 

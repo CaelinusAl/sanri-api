@@ -5,7 +5,10 @@ uvicorn[standard]==0.30.1
 # --- DATABASE ---
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
+alembic>=1.13,<2
+pgvector>=0.3,<1
 pydantic
+PyYAML>=6,<7
 
 # --- AUTH & SECURITY ---
 passlib[bcrypt]==1.7.4
@@ -23,7 +26,7 @@ python-dotenv==1.0.1
 email-validator==2.2.0
 
 # --- AI (senin bilinç alanı için) ---
-openai==1.40.6
+openai>=1.66,<2
 
 httpx==0.27.0
 
@@ -35,3 +38,6 @@ iyzipay>=1.0.46
 typing_extensions==4.12.2
 
 APScheduler==3.10.4
+
+# --- TESTING ---
+pytest>=8,<9

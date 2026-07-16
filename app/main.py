@@ -1,12 +1,24 @@
 
 # app/main.py
 from dotenv import load_dotenv
-load_dotenv()
+from pathlib import Path
+
+
+_env_candidates = (
+    Path(__file__).resolve().parents[1] / ".env.LOCAL_ONLY",
+    Path(__file__).resolve().parents[2] / ".env.LOCAL_ONLY",
+)
+for _local_env in _env_candidates:
+    if _local_env.exists():
+        load_dotenv(dotenv_path=_local_env, override=False)
+        break
+load_dotenv(override=False)
 
 import json
 import os
 from typing import Any
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -69,6 +81,13 @@ from app.routes.deliverables import router as deliverables_router
 from app.routes.deliverables import admin_router as admin_deliverables_router
 from app.routes.anlasilma_alani import router as anlasilma_router
 from app.routes.daily_feeling import router as daily_feeling_router
+from app.api.routes.auth import router as v1_auth_router
+from app.api.routes.chat import router as v1_chat_router
+from app.api.routes.conversations import router as v1_conversations_router
+from app.api.routes.memories import router as v1_memories_router
+from app.api.routes.projects import router as v1_projects_router
+from app.api.routes.state import router as v1_state_router
+from app.models import v1 as v1_models
 from app.routes.quiz import router as quiz_router
 
 
@@ -86,6 +105,17 @@ def _split_origins(v: str) -> list[str]:
 
 
 app = FastAPI(default_response_class=UTF8JSONResponse)
+
+
+@app.exception_handler(HTTPException)
+async def standard_http_error(_: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, dict) else {"code": "http_error", "message": str(exc.detail)}
+    return JSONResponse(status_code=exc.status_code, content={"error": detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def standard_validation_error(_: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"error": {"code": "validation_error", "message": "Request validation failed", "details": exc.errors()}})
 
 @app.on_event("startup")
 async def _register_shopier_webhook_on_startup():
@@ -234,3 +264,9 @@ app.include_router(deliverables_router)
 app.include_router(admin_deliverables_router)
 app.include_router(anlasilma_router)
 app.include_router(daily_feeling_router)
+app.include_router(v1_auth_router)
+app.include_router(v1_chat_router)
+app.include_router(v1_conversations_router)
+app.include_router(v1_memories_router)
+app.include_router(v1_state_router)
+app.include_router(v1_projects_router)

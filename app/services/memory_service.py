@@ -1,3 +1,32 @@
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.v1 import V1Memory
+
+
+def list_memory(db: Session, user_id: str, limit: int = 20) -> list[V1Memory]:
+    return list(
+        db.scalars(
+            select(V1Memory)
+            .where(V1Memory.user_id == UUID(user_id))
+            .order_by(V1Memory.created_at.desc())
+            .limit(limit)
+        )
+    )
+
+
+def memory_context(db: Session, user_id: str, limit: int = 10) -> list[str]:
+    return [row.content for row in list_memory(db, user_id, limit)]
+
+
+def create_memory(db: Session, user_id: str, content: str, memory_type: str) -> V1Memory:
+    row = V1Memory(user_id=UUID(user_id), content=content, memory_type=memory_type)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 

@@ -16,6 +16,7 @@ from app.services.profile_service import (
     build_profile_prompt,
     save_profile,
 )
+from app.services.consciousness_layer import build_intent_router_instruction, detect_production_intent
 
 MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 
@@ -185,6 +186,7 @@ def run_sanri(
     lang: str = "tr",
     system_context: str = None,
     gate_name: str = None,
+    conversation_context: list[dict] | None = None,
 ) -> dict:
     is_premium = check_is_premium(db, user_id)
     daily_count = get_daily_message_count(db, user_id)
@@ -217,6 +219,15 @@ def run_sanri(
 
     profile_text = json.dumps(runtime_profile, ensure_ascii=False)
     profile_prompt = build_profile_prompt(runtime_profile)
+    project_mode = "ACTIVE ROOM: PROJECTS" in (system_context or "").upper()
+    production_intent = detect_production_intent(user_message)
+    if project_mode and not production_intent:
+        production_intent = "project_planning"
+    recent_context = "\n".join(
+        f"{'AURA' if item.get('role') == 'assistant' else 'KULLANICI'}: {str(item.get('content', ''))[:4000]}"
+        for item in (conversation_context or [])[-8:]
+        if item.get("content")
+    )
 
     lang_instruction = (
         "Respond in Turkish."
@@ -235,6 +246,16 @@ def run_sanri(
 
     system_prompt = (
         build_system_prompt("user")
+        + "\n\nAURA PRIMARY RULE:\n"
+        + "AURA kullanıcının istediği sonucu geciktirmez. Önce üretir. Sonra birlikte derinleşir.\n"
+        + build_intent_router_instruction(user_message)
+        + "\n\nAURA RELATIONSHIP CONTINUITY:\n"
+        + "You are AURA, the user's continuing thinking and creation partner inside SANRI OS.\n"
+        + "Never answer as if this person were a stranger. Before responding, recall the verified "
+        + "memory and current profile available in this context, recall what you were building "
+        + "together, continue that relationship, and only then answer the current message.\n"
+        + "The feeling should be: We never started from zero. Never invent memories that are not "
+        + "present. Speak with calm, clear poetry: deep and alive, never vague or mystical.\n"
         + "\n\n"
         + lang_instruction
         + gate_block
@@ -258,6 +279,37 @@ def run_sanri(
         + "8. No psychological diagnosis, no clinical labels, no hollow affirmations, no moralizing, no commanding 'yapmalısın'.\n"
         + "9. Gate / awakened context: hold the gate's tone and imagery, but stay warm, clear, and human.\n"
     )
+    if production_intent:
+        expansion = (
+            "Offer to turn the selected direction into a practical project roadmap with a clear next step."
+            if production_intent == "project_planning"
+            else
+            "Offer to expand the selected direction into a book package with its promise, "
+            "genre, audience, characters, conflict, chapter outline and opening."
+            if production_intent == "book_creation"
+            else
+            "Offer to expand the selected direction into a full script or production package."
+        )
+        system_prompt += (
+            "\nPRODUCTION OVERRIDE (higher priority than reflective defaults):\n"
+            "This is a production request. Use a numbered list. Give 5-10 concrete usable outputs, "
+            f"highlight the strongest one, and {expansion} "
+            "Do not end with a reflection question.\n"
+        )
+
+    response_mode = (
+        f"""
+PRODUCTION RESPONSE MODE ({production_intent}):
+Önce tek cümleyle talebi kabul et. Ardından 5-10 somut ve kullanılabilir seçenek ver.
+En güçlü seçeneği açıkça işaretle. {"Projeyi mevcut durum, riskler, öncelik, kararlar ve sonraki en küçük adımı içeren uygulanabilir bir yol haritasına dönüştürmeyi teklif et." if production_intent == "project_planning" else "Seçilen yönü vaat, tür, hedef okur, karakterler, çatışma, bölüm omurgası ve açılış içeren bir kitap paketine dönüştürmeyi teklif et." if production_intent == "book_creation" else "Seçilen fikri tam senaryoya veya üretim paketine dönüştürmeyi teklif et."} Şiirsel reflection yapma; üretim önceliklidir.
+"""
+        if production_intent
+        else """
+REFLECTIVE RESPONSE MODE:
+Kullanıcının cümlesindeki duyguyu hisset ve ona ayna tut. Analiz etme, tanı koyma,
+tavsiye verme. Şiirsel ama anlaşılır konuş; kısa paragraflar kullan.
+"""
+    )
 
     user_input = f"""
 IMPORTANT:
@@ -268,19 +320,19 @@ User profile:
 Conversation memory:
 {memory_text}
 
+Recent conversation in this session:
+{recent_context or "No earlier messages in this session."}
+
 Current user message:
 {user_message}
+
+{response_mode}
 
 RULE:
 If the user is asking about past conversation, memory, or recall, answer directly using memory.
 Do NOT go abstract in those cases.
-
-HOW TO RESPOND:
-Kullanıcının cümlesindeki duyguyu hisset ve ona ayna tut. Analiz etme, tanı koyma, tavsiye verme.
-Ona henüz kelimelere dökemediği bir yanını göster. "Belki / olabilir" diyebilirsin ama aşırı açıklama yapma.
-Şiirsel ama anlaşılır konuş; kısa paragraflar, kısa satırlar. Maddeleme yok.
-80-150 kelime.
-Sonunda tek bir yansıma sorusu bırak — kişiyi nazikçe kendine döndüren. Tek soru olsun ve en son satır o olsun.
+Continue from the recent session context above. Do not treat the current message as
+an isolated request when it clearly refers to something already said.
 
 Now respond:
 """.strip()
