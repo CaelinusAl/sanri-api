@@ -78,6 +78,7 @@ def ask(
         system_context=req.system_context,
         gate_name=req.gate_name,
         conversation_context=req.conversation_context,
+        requested_mode=req.domain if req.domain != "auto" else req.mode,
     )
 
 

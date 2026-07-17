@@ -1,0 +1,12 @@
+contracts:
+  idea_list:
+    - "3-10 somut seçenek"
+    - "En güçlü seçeneği belirt"
+    - "Geliştirme teklifini ekle"
+  project_plan:
+    - "Mevcut durum"
+    - "Öncelik ve risk"
+    - "Sonraki en küçük adım"
+  reflection:
+    - "Konuyu kısa biçimde netleştir"
+    - "Gerekirse en fazla iki soru sor"

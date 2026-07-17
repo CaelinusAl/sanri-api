@@ -1,38 +1,18 @@
 from dataclasses import dataclass
 
-
-PRODUCTION_INTENT_PATTERNS = {
-    "ideas": ("fikir", "fikirler", "idea", "ideas", "öneri", "öneriler", "konsept"),
-    "lists": ("liste çıkar", "listele", "liste yap", "list"),
-    "plans": ("plan", "yol haritası", "roadmap"),
-    "reel_topics": ("reel fikri", "reel fikirleri", "reel konusu", "reel konuları", "reels"),
-    "scripts": ("senaryo", "senaryosu", "script", "metin yaz", "senaryo yaz"),
-    "content": ("içerik", "content", "içerik üret", "içerik fikri"),
-    "captions": ("caption", "açıklama yaz", "post açıklaması", "alt yazı"),
-    "book_titles": ("kitap başlığı", "kitap adı", "başlık bul", "başlık öner"),
-    "book_creation": ("kitap yazmak", "kitap yazıyorum", "roman yaz", "hikâye yaz", "öykü yaz"),
-    "project_names": ("proje adı", "isim bul", "isim öner", "proje ismi"),
-    "campaigns": ("kampanya", "pazarlama kampanyası"),
-    "creative_concepts": ("yaratıcı konsept", "creative concept", "konsept üret"),
-    "build_requests": ("kurmak istiyorum", "inşa etmek", "oluşturmak istiyorum", "sistem kur", "nasıl yardımcı olabilirsin"),
-}
-
-
-def detect_production_intent(message: str) -> str | None:
-    """Detect explicit production requests before AURA chooses a conversational mode."""
-    normalized = " ".join(message.casefold().split())
-    if any(marker in normalized for marker in ("birlikte düşünelim", "sadece düşünmek", "yansıt")):
-        return None
-    for intent, patterns in PRODUCTION_INTENT_PATTERNS.items():
-        if any(pattern in normalized for pattern in patterns):
-            return intent
-    return None
+from app.services.intent_router import detect_production_intent, route_message
 
 
 def build_intent_router_instruction(message: str) -> str:
+    route = route_message(message)
     production_intent = detect_production_intent(message)
     if production_intent is None:
-        return "Intent Router: Açık bir üretim talebi yoksa normal çalışma modunu sürdür. Kullanıcı açıkça birlikte düşünmek isterse reflection yaklaşımını kullan."
+        return (
+            "INTENT ROUTER\n"
+            f"{route.prompt_block()}\n"
+            "Açık bir üretim talebi yoksa normal çalışma modunu sürdür. Kullanıcı açıkça "
+            "birlikte düşünmek isterse reflection yaklaşımını kullan."
+        )
     expansion = (
         "Seçilen yönü kitap üretim paketine dönüştür: vaat, tür, hedef okur, ana karakterler, "
         "çatışma, bölüm omurgası ve ilk bölümün açılışı."
@@ -42,6 +22,7 @@ def build_intent_router_instruction(message: str) -> str:
     )
     return f"""
 INTENT ROUTER — PRODUCTION INTENT DETECTED: {production_intent}
+{route.prompt_block()}
 Bu mesaj üretim niyeti taşıyor. ÜRETİMİ felsefi sohbete dönüştürme ve sonucu geciktirme.
 Kullanıcının istediği sonucu geciktirmezsin. Önce üretirsin. Sonra birlikte derinleşirsiniz.
 Yanıt sırası zorunludur:

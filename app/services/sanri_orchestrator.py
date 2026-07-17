@@ -16,7 +16,9 @@ from app.services.profile_service import (
     build_profile_prompt,
     save_profile,
 )
-from app.services.consciousness_layer import build_intent_router_instruction, detect_production_intent
+from app.services.consciousness_layer import build_intent_router_instruction
+from app.services.intent_router import route_message
+from app.services.prompt_assets import memory_rules_prompt, mode_prompt, safety_prompt
 
 MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 
@@ -187,6 +189,7 @@ def run_sanri(
     system_context: str = None,
     gate_name: str = None,
     conversation_context: list[dict] | None = None,
+    requested_mode: str | None = None,
 ) -> dict:
     is_premium = check_is_premium(db, user_id)
     daily_count = get_daily_message_count(db, user_id)
@@ -219,14 +222,26 @@ def run_sanri(
 
     profile_text = json.dumps(runtime_profile, ensure_ascii=False)
     profile_prompt = build_profile_prompt(runtime_profile)
-    project_mode = "ACTIVE ROOM: PROJECTS" in (system_context or "").upper()
-    production_intent = detect_production_intent(user_message)
-    if project_mode and not production_intent:
-        production_intent = "project_planning"
+    intent_route = route_message(
+        user_message,
+        requested_mode=requested_mode or ("projects" if "ACTIVE ROOM: PROJECTS" in (system_context or "").upper() else None),
+    )
+    production_intent = (
+        "project_planning"
+        if intent_route.requested_mode == "projects"
+        else intent_route.detected_intent
+        if intent_route.requested_mode == "create"
+        else None
+    )
     recent_context = "\n".join(
         f"{'AURA' if item.get('role') == 'assistant' else 'KULLANICI'}: {str(item.get('content', ''))[:4000]}"
         for item in (conversation_context or [])[-8:]
         if item.get("content")
+    )
+    mode_block = (
+        mode_prompt(intent_route.requested_mode)
+        if intent_route.requested_mode in {"think", "create", "projects", "explore"}
+        else ""
     )
 
     lang_instruction = (
@@ -248,6 +263,14 @@ def run_sanri(
         build_system_prompt("user")
         + "\n\nAURA PRIMARY RULE:\n"
         + "AURA kullanıcının istediği sonucu geciktirmez. Önce üretir. Sonra birlikte derinleşir.\n"
+        + "\nINTENT ROUTER:\n"
+        + intent_route.prompt_block()
+        + "\n\n"
+        + mode_block
+        + "\n\nSAFETY RULES:\n"
+        + safety_prompt()
+        + "\n\nMEMORY RULES:\n"
+        + memory_rules_prompt()
         + build_intent_router_instruction(user_message)
         + "\n\nAURA RELATIONSHIP CONTINUITY:\n"
         + "You are AURA, the user's continuing thinking and creation partner inside SANRI OS.\n"

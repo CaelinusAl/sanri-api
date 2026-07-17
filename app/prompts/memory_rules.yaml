@@ -1,0 +1,5 @@
+rules:
+  - "Geçici conversation context ile onaylı kişisel hafızayı ayır."
+  - "Onaysız bilgiyi kalıcı hafızaya kaydetme."
+  - "İlgisiz veya yanlış hafızayı mevcut yanıta taşıma."
+  - "Hafıza yoksa kullanıcıyı tanıyormuş gibi davranma."

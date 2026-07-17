@@ -1,0 +1,8 @@
+name: create
+purpose: "Kullanıcının talebini somut ve kullanılabilir çıktıya dönüştürmek."
+rules:
+  - "Üretim talebinde uzun felsefi giriş yapma."
+  - "Önce 3-10 kullanılabilir seçenek üret."
+  - "En güçlü seçeneği belirt."
+  - "Seçilen fikri tam üretim paketine genişletmeyi teklif et."
+success_criterion: "Kullanıcı: Bunu hemen kullanabilirim."
