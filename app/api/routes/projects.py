@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user_id
 from app.db import get_db
 from app.models.v1 import V1Project
-from app.schemas.v1 import ProjectCreate, ProjectResponse
+from app.schemas.v1 import ProjectCreate, ProjectResponse, ProjectUpdate
 
 
 router = APIRouter(prefix="/v1/projects", tags=["v1-projects"])
@@ -36,4 +36,21 @@ def get_project(project_id: UUID, user_id: str = Depends(get_current_user_id), d
     project = db.scalar(select(V1Project).where(V1Project.id == project_id, V1Project.user_id == UUID(user_id)))
     if project is None:
         raise HTTPException(status_code=404, detail={"code": "project_not_found", "message": "Project not found"})
+    return project
+
+
+@router.patch("/{project_id}", response_model=ProjectResponse)
+def update_project(
+    project_id: UUID,
+    payload: ProjectUpdate,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    project = db.scalar(select(V1Project).where(V1Project.id == project_id, V1Project.user_id == UUID(user_id)))
+    if project is None:
+        raise HTTPException(status_code=404, detail={"code": "project_not_found", "message": "Project not found"})
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(project, key, value)
+    db.commit()
+    db.refresh(project)
     return project

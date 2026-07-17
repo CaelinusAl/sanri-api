@@ -83,13 +83,14 @@ def chat(
         mode=payload.mode,
         language=payload.language,
         memory_consent=payload.memory_consent,
+        user_message=payload.message,
+        active_project_id=str(conversation.project_id) if conversation.project_id else None,
         consciousness=ConsciousnessContext(
             intent=payload.intent,
             work_mode=payload.work_mode,
             session_goal=conversation.session_goal,
             emotional_climate=conversation.emotional_climate,
         ),
-        user_message=payload.message,
     )
     provider = OpenAIProvider(settings)
     started = time.perf_counter()

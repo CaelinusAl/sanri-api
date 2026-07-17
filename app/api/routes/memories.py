@@ -18,7 +18,32 @@ router = APIRouter(prefix="/v1/memories", tags=["v1-memories"])
 def save_memory(payload: MemoryCreate, user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
     if not payload.consent:
         raise HTTPException(status_code=400, detail={"code": "memory_consent_required", "message": "Memory consent is required"})
-    return create_memory(db, user_id, payload.content, payload.memory_type)
+    return create_memory(
+        db,
+        user_id,
+        payload.content,
+        payload.memory_type,
+        source=payload.source,
+        category=payload.category,
+        confidence=payload.confidence,
+        conversation_id=str(payload.conversation_id) if payload.conversation_id else None,
+        project_id=str(payload.project_id) if payload.project_id else None,
+    )
+
+
+@router.get("", response_model=list[MemoryResponse])
+def list_memories(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
+    statement = (
+        select(V1Memory)
+        .where(
+            V1Memory.user_id == UUID(user_id),
+            V1Memory.approval_status == "approved",
+            V1Memory.deleted_at.is_(None),
+        )
+        .order_by(V1Memory.created_at.desc())
+        .limit(100)
+    )
+    return list(db.scalars(statement))
 
 
 @router.get("/search", response_model=list[MemoryResponse])
@@ -27,7 +52,16 @@ def search_memories(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    statement = select(V1Memory).where(V1Memory.user_id == UUID(user_id)).order_by(V1Memory.created_at.desc()).limit(50)
+    statement = (
+        select(V1Memory)
+        .where(
+            V1Memory.user_id == UUID(user_id),
+            V1Memory.approval_status == "approved",
+            V1Memory.deleted_at.is_(None),
+        )
+        .order_by(V1Memory.created_at.desc())
+        .limit(50)
+    )
     if q:
         statement = statement.where(V1Memory.content.ilike(f"%{q}%"))
     return list(db.scalars(statement))
@@ -47,6 +81,9 @@ def update_memory(memory_id: UUID, payload: MemoryUpdate, user_id: str = Depends
     if row is None:
         raise HTTPException(status_code=404, detail={"code": "memory_not_found", "message": "Memory not found"})
     row.content = payload.content
+    row.category = payload.category
+    if payload.confidence is not None:
+        row.confidence = payload.confidence
     db.commit()
     db.refresh(row)
     return row

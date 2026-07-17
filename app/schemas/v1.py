@@ -42,6 +42,11 @@ class ConversationSummary(BaseModel):
     session_goal: str | None
     emotional_climate: str | None
     reflection_after_action: dict | None
+    active_mode: str
+    detected_intent: str
+    project_id: UUID | None
+    close_summary: dict | None
+    closed_at: datetime | None
 
 
 class MessageResponse(BaseModel):
@@ -60,11 +65,18 @@ class ConversationResponse(ConversationSummary):
 class MemoryCreate(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     memory_type: str = Field(default="explicit", max_length=50)
+    source: Literal["chat_suggestion", "manual", "session_close"] = "manual"
+    category: str | None = Field(default=None, max_length=100)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    conversation_id: UUID | None = None
+    project_id: UUID | None = None
     consent: bool = False
 
 
 class MemoryUpdate(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
+    category: str | None = Field(default=None, max_length=100)
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class MemoryResponse(BaseModel):
@@ -73,7 +85,13 @@ class MemoryResponse(BaseModel):
     id: UUID
     content: str
     memory_type: str
+    source: str
+    category: str | None
+    confidence: float
+    approval_status: Literal["proposed", "approved", "rejected"]
     created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
 
 
 class MeResponse(BaseModel):
@@ -87,6 +105,10 @@ class AuraStateUpdate(BaseModel):
     active_project: str | None = Field(default=None, max_length=300)
     last_checkpoint: str | None = Field(default=None, max_length=2000)
     relationship_style: str | None = Field(default=None, max_length=100)
+    active_mode: str | None = Field(default=None, max_length=30)
+    detected_intent: str | None = Field(default=None, max_length=50)
+    active_project_id: UUID | None = None
+    next_smallest_action: str | None = Field(default=None, max_length=2000)
 
 
 class AuraStateResponse(AuraStateUpdate):
@@ -100,10 +122,30 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=300)
     current_sprint: str | None = Field(default=None, max_length=200)
     next_step: str | None = Field(default=None, max_length=2000)
+    status: str = Field(default="active", max_length=30)
+    last_checkpoint: dict | None = None
+    notes: list | None = None
+    decisions: list | None = None
+    manifestos: list | None = None
+    risks: list | None = None
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+    current_sprint: str | None = Field(default=None, max_length=200)
+    next_step: str | None = Field(default=None, max_length=2000)
+    status: str | None = Field(default=None, max_length=30)
+    last_checkpoint: dict | None = None
+    notes: list | None = None
+    decisions: list | None = None
+    manifestos: list | None = None
+    risks: list | None = None
 
 
 class ProjectResponse(ProjectCreate):
     model_config = {"from_attributes": True}
 
     id: UUID
+    user_id: UUID
+    created_at: datetime
     updated_at: datetime

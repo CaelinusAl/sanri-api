@@ -35,7 +35,11 @@ def state_context(db: Session, user_id: str) -> str:
             f"Current Focus: {state.current_focus or 'Not set'}",
             f"Relationship: {state.relationship_style or 'Strategic Partner'}",
             f"Current Energy: {state.energy_level or 'Not set'}",
+            f"Active Mode: {state.active_mode or 'aura'}",
+            f"Detected Intent: {state.detected_intent or 'general_chat'}",
             f"Active Project: {state.active_project or 'Not set'}",
+            f"Active Project ID: {state.active_project_id or 'Not set'}",
             f"Last Checkpoint: {state.last_checkpoint or 'Not set'}",
+            f"Next Smallest Action: {state.next_smallest_action or 'Not set'}",
         ]
     )

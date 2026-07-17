@@ -1,6 +1,7 @@
 import uuid
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -18,6 +19,11 @@ class V1Conversation(Base):
     session_goal: Mapped[str | None] = mapped_column(String(500))
     emotional_climate: Mapped[str | None] = mapped_column(String(50))
     reflection_after_action: Mapped[dict | None] = mapped_column(JSON)
+    active_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="aura")
+    detected_intent: Mapped[str] = mapped_column(String(50), nullable=False, default="general_chat")
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("v1_projects.id", ondelete="SET NULL"))
+    close_summary: Mapped[dict | None] = mapped_column(JSON)
+    closed_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     messages: Mapped[list["V1Message"]] = relationship(back_populates="conversation", cascade="all, delete-orphan", order_by="V1Message.created_at")
@@ -46,6 +52,15 @@ class V1Memory(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     memory_type: Mapped[str] = mapped_column(String(50), nullable=False, default="explicit")
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="chat_suggestion")
+    category: Mapped[str | None] = mapped_column(String(100))
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    approval_status: Mapped[str] = mapped_column(String(20), nullable=False, default="proposed")
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("v1_conversations.id", ondelete="SET NULL"))
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("v1_projects.id", ondelete="SET NULL"))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
+    updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -58,6 +73,10 @@ class V1AuraState(Base):
     active_project: Mapped[str | None] = mapped_column(String(300))
     last_checkpoint: Mapped[str | None] = mapped_column(Text)
     relationship_style: Mapped[str] = mapped_column(String(100), nullable=False, default="Strategic Partner")
+    active_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="aura")
+    detected_intent: Mapped[str] = mapped_column(String(50), nullable=False, default="general_chat")
+    active_project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("v1_projects.id", ondelete="SET NULL"))
+    next_smallest_action: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
@@ -67,10 +86,13 @@ class V1Project(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="active")
     current_sprint: Mapped[str | None] = mapped_column(String(200))
     next_step: Mapped[str | None] = mapped_column(Text)
+    last_checkpoint: Mapped[dict | None] = mapped_column(JSON)
     notes: Mapped[list | None] = mapped_column(JSON)
     decisions: Mapped[list | None] = mapped_column(JSON)
     manifestos: Mapped[list | None] = mapped_column(JSON)
     risks: Mapped[list | None] = mapped_column(JSON)
+    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
