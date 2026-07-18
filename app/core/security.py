@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -33,7 +34,13 @@ def get_current_user_id(
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_token", "message": "Token has no user subject"})
-    return str(user_id)
+    try:
+        return str(UUID(str(user_id)))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "invalid_token", "message": "Token subject is not a valid user UUID"},
+        ) from exc
 
 
 def get_current_user_claims(
@@ -43,7 +50,7 @@ def get_current_user_claims(
     if credentials is None or not settings.supabase_jwt_secret:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "auth_required", "message": "Authentication required"})
     try:
-        return jwt.decode(
+        claims = jwt.decode(
             credentials.credentials,
             settings.supabase_jwt_secret,
             algorithms=["HS256"],
@@ -51,5 +58,43 @@ def get_current_user_claims(
             issuer=settings.supabase_jwt_issuer or None,
             options={"verify_aud": bool(settings.supabase_jwt_audience)},
         )
-    except JWTError as exc:
+        subject = claims.get("sub")
+        if not subject:
+            raise ValueError("missing subject")
+        claims["sub"] = str(UUID(str(subject)))
+        return claims
+    except (JWTError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_token", "message": "Invalid access token"}) from exc
+
+
+def _extract_roles(claims: dict) -> set[str]:
+    roles: set[str] = set()
+    app_metadata = claims.get("app_metadata") or {}
+    user_metadata = claims.get("user_metadata") or {}
+    for source in (claims, app_metadata, user_metadata):
+        if not isinstance(source, dict):
+            continue
+        role = source.get("role")
+        if isinstance(role, str) and role:
+            roles.add(role)
+        role_list = source.get("roles")
+        if isinstance(role_list, list):
+            roles.update(str(r) for r in role_list if r)
+    return roles
+
+
+def get_current_recovery_reviewer(
+    claims: Annotated[dict, Depends(get_current_user_claims)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> UUID:
+    """Reviewer identity is derived only from verified JWT + role claims."""
+    roles = _extract_roles(claims)
+    if settings.recovery_reviewer_role not in roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "reviewer_role_required",
+                "message": "Recovery reviewer role is required",
+            },
+        )
+    return UUID(str(claims["sub"]))

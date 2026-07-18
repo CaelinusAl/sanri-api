@@ -86,8 +86,11 @@ from app.api.routes.chat import router as v1_chat_router
 from app.api.routes.conversations import router as v1_conversations_router
 from app.api.routes.memories import router as v1_memories_router
 from app.api.routes.projects import router as v1_projects_router
+from app.api.routes.recovery import router as v1_recovery_router
 from app.api.routes.state import router as v1_state_router
 from app.models import v1 as v1_models
+from app.models import recovery_assertion as recovery_assertion_models  # noqa: F401
+from app.models import recovery_link as recovery_link_models  # noqa: F401
 from app.routes.quiz import router as quiz_router
 
 
@@ -270,3 +273,4 @@ app.include_router(v1_conversations_router)
 app.include_router(v1_memories_router)
 app.include_router(v1_state_router)
 app.include_router(v1_projects_router)
+app.include_router(v1_recovery_router)

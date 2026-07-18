@@ -21,7 +21,8 @@
 | Blocker | `VERIFIED_LEGACY_IDENTITY_SOURCE_MISSING` |
 | Release gate | `CLOSED` |
 | Automatic linking | `DISABLED` |
-| Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` (PMP-01A.3 `IMPLEMENTATION_READY`) |
+| Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` (A.3.1–A.3.4 `EVIDENCE_READY`; Recovery UI deferred) |
+| Security core freeze tag | `pmp01a34-complete` |
 | Web event contract | `NOT_VERIFIABLE` (PMP-01A.2 closed) |
 | Legacy reachable UX | Contained by PMP-01A.1; residual deep-links fail closed |
 | PMP-01B | `NOT_STARTED` |
@@ -167,15 +168,47 @@ ad-hoc database edits.
 
 ```text
 Policy
-  → Reviewer API
-  → Signed Assertion Store
-  → Four-eyes Approval
-  → Immutable Audit Trail
-  → Recovery UI
+  → Reviewer API                         (A.3.1 EVIDENCE_READY)
+  → Signed Assertion Store               (A.3.2 EVIDENCE_READY)
+  → Four-eyes Approval                   (A.3.3 EVIDENCE_READY)
+  → Recovery Link Lifecycle              (A.3.4 EVIDENCE_READY / frozen at pmp01a34-complete)
+  → Immutable Audit Trail                (embedded in A.3.1–A.3.4 mutations)
+  → Recovery UI                          (next — thin client only)
   → Operational Capability
 ```
 
 Any missing link keeps the package incomplete.
+
+### Security core architecture (A.3.1–A.3.4)
+
+Server is the sole authority. Recovery UI (next) is a thin client: display state,
+start reviewer operations, show results. Policy, quorum, link validity, revoke
+rules, and state transitions never move into the client.
+
+```mermaid
+flowchart TB
+  subgraph client["Client boundary — thin only"]
+    UI["Recovery UI<br/>(deferred)"]
+  end
+
+  subgraph server["Server authority — security core"]
+    API["Reviewer API<br/>A.3.1"]
+    SVC["Recovery Service"]
+    AS["Signed Assertion Store<br/>A.3.2"]
+    FE["Four-Eyes Quorum<br/>A.3.3"]
+    LS["Recovery Link Store<br/>A.3.4"]
+    AUD["Immutable Audit"]
+  end
+
+  UI -->|"JWT + operation_key<br/>no client authority"| API
+  API --> SVC
+  SVC --> AS
+  SVC --> FE
+  SVC --> LS
+  SVC --> AUD
+  AS -->|"valid approvals only"| FE
+  FE -->|"quorum gate"| LS
+```
 
 ### Separation: package completion ≠ blocker resolution
 
@@ -431,17 +464,271 @@ Contract clarifications locked by this review:
 Implementation order after this gate:
 
 ```text
-Reviewer API
-  → Signed Assertion Store
-  → Four-Eyes Workflow enforcement
-  → Recovery Service link/revoke path
-  → Evidence / negative tests
-  → (later) Recovery UI
+Reviewer API                         (A.3.1 EVIDENCE_READY)
+  → Signed Assertion Store           (A.3.2 EVIDENCE_READY)
+  → Four-Eyes Workflow enforcement   (A.3.3 EVIDENCE_READY)
+  → Recovery Link Lifecycle          (A.3.4 EVIDENCE_READY) ← freeze tag pmp01a34-complete
+  → (next) Recovery UI — thin client only
 ```
 
 `IMPLEMENTATION_READY` does not open the release gate, does not resolve
 `PMP-01A-BLK-001`, and does not authorize production linking without the
 later Resolution Review.
+
+### PMP-01A.3.1 — Reviewer API implementation
+
+**Status:** `EVIDENCE_READY`  
+**Verification:** `pytest tests/test_pmp01a31_reviewer_api.py` — 13 passed  
+**Parent:** PMP-01A.3 Manual Recovery Execution  
+**UI:** deferred — must not precede transaction / security evidence  
+**Does not resolve:** `PMP-01A-BLK-001`  
+**Does not enable:** automatic linking, migration, rollout, release gate, Recovery UI  
+**Persistence note:** A.3.1 uses an in-process case store for transactional proof; durable Signed Assertion Store is A.3.2.
+
+#### Security bounds (minimum gate)
+
+1. Reviewer identity is derived only from server-side JWT + role verification.
+2. Client cannot supply reviewer identity or decision authority fields.
+3. Every mutation requires `operation_key` and is idempotent on replay.
+4. State transitions are allowed only via the locked A.3 state machine.
+5. Audit write failure aborts the mutation; case state and assertions roll back.
+6. Same person filling both reviewer roles is rejected (`four_eyes_conflict`).
+7. Terminal cases are immutable.
+8. Endpoints must not open rollout or create identity links.
+
+#### Exit for A.3.1 (not “API works”)
+
+Package exits only when negative security tests prove the bounds above:
+
+| Evidence | Expected |
+|---|---|
+| Missing / invalid JWT | `401` |
+| Authenticated non-reviewer | `403 reviewer_role_required` |
+| Client-sent `reviewer_id` on assertion | request validation reject |
+| Duplicate `operation_key` | idempotent replay (`replayed: true`) |
+| Illegal transition | `409 illegal_transition` |
+| Same reviewer twice | `409 four_eyes_conflict`; state unchanged |
+| Audit writer failure | `audit_failed`; no committed case/assertion |
+| Mutate after cancel/expire | `409 terminal_case_immutable` |
+| Recovery routes | no link/rollout/automatic endpoints |
+
+#### Non-goals for A.3.1
+
+- Recovery UI
+- Durable signed Assertion Store (next package)
+- Link create / revoke path
+- Opening release gate or unblocking PMP-01A
+
+#### Implementation map
+
+| Layer | Location |
+|---|---|
+| Domain state machine | `app/domain/recovery.py` |
+| Transactional service | `app/application/recovery_service.py` |
+| Reviewer JWT/role gate | `app/core/security.py` (`get_current_recovery_reviewer`) |
+| HTTP surface | `app/api/routes/recovery.py` (`/v1/recovery/*`) |
+| Negative evidence | `tests/test_pmp01a31_reviewer_api.py` |
+
+### PMP-01A.3.2 — Durable Signed Assertion Store
+
+**Status:** `EVIDENCE_READY`  
+**Verification:** `pytest tests/test_pmp01a32_assertion_store.py` — 16 passed  
+**Parent:** PMP-01A.3 Manual Recovery Execution  
+**Does not resolve:** `PMP-01A-BLK-001`  
+**Does not enable:** automatic linking, migration, rollout, release gate, Recovery UI, identity link create/revoke
+
+#### Problem
+
+A.3.1 proves reviewer API transaction bounds in-process. Operational recovery
+still requires durable, server-signed assertions with append-only revoke and
+quorum validity that excludes expired/revoked/forged rows.
+
+#### Security bounds (minimum gate)
+
+1. Only Recovery Service / assertion store signs; client signatures rejected
+   (`client_assertion_forbidden`).
+2. Client cannot supply reviewer authority fields into the store.
+3. Required A.3 assertion schema fields are persisted, including
+   `policy_version`, `evidence_reference_hash`, `signature`, `revoked_at`.
+4. `operation_key` is unique and idempotent on replay.
+5. Revocation is append-only (`revoked_at`); delete is forbidden.
+6. `policy_version` is immutable on a stored assertion.
+7. Expired or revoked approvals never complete quorum.
+8. Missing signing secret fails closed (`signing_not_configured`).
+9. Package must not create identity links or open rollout controls.
+
+#### Contract clarifications applied
+
+1. Each assertion has its own `operation_key` (idempotency). Quorum is evaluated
+   on `case_id` + `evidence_reference_hash` with two distinct valid reviewers.
+2. Decision values stored as `approve` / `reject` (canonical lowercase).
+
+#### Exit for A.3.2 (not “store exists”)
+
+| Evidence | Expected |
+|---|---|
+| Client-supplied signature | `client_assertion_forbidden`; no row |
+| Client-supplied reviewer authority | `client_assertion_forbidden` |
+| Tampered payload | signature verification false; excluded from quorum |
+| Duplicate `operation_key` | idempotent replay |
+| Same reviewer twice | `four_eyes_conflict` |
+| After TTL | approvals excluded from quorum |
+| Revoke | `revoked_at` set; row remains; quorum fails |
+| Delete / policy mutate | `assertion_immutable` |
+| Empty signing secret | `signing_not_configured`; no row |
+| Migration | assertion table only; no link/rollout |
+
+#### Non-goals for A.3.2
+
+- Recovery UI
+- Link create / revoke path
+- Four-eyes workflow completion package beyond store-level role assignment
+- Opening release gate or unblocking PMP-01A
+
+#### Implementation map
+
+| Layer | Location |
+|---|---|
+| Assertion domain | `app/domain/assertion.py` |
+| Server signing | `app/application/assertion_signing.py` |
+| Durable store | `app/application/assertion_store.py` |
+| ORM model | `app/models/recovery_assertion.py` |
+| Migration | `migrations/versions/20260718_0004_recovery_assertions.*` |
+| Negative evidence | `tests/test_pmp01a32_assertion_store.py` |
+
+### PMP-01A.3.3 — Four-Eyes Workflow Enforcement
+
+**Status:** `EVIDENCE_READY`  
+**Verification:** `pytest tests/test_pmp01a33_four_eyes_workflow.py` — 9 passed  
+**Regression:** A.3.1 + A.3.2 suites remain green (39 total across A.3.1–A.3.3)  
+**Parent:** PMP-01A.3 Manual Recovery Execution  
+**Does not resolve:** `PMP-01A-BLK-001`  
+**Does not enable:** identity link create/revoke, Recovery UI, migration, rollout, release gate
+
+#### Problem
+
+A.3.1 and A.3.2 proved API bounds and a durable signed store in isolation.
+Recovery case mutations could still treat in-memory assertion lists as authority.
+Four-eyes must be mandatory: store write → quorum check → case commit → audit,
+with full rollback if audit fails.
+
+#### Required flow
+
+```text
+Recovery Request
+  → Mutation Start
+  → Assertion #1 (reviewer A) → Assertion Store
+  → Assertion #2 (reviewer B) → Assertion Store
+  → Quorum Check
+       ├── FAIL → reject / remain non-approved
+       └── PASS → Recovery Mutation Commit → Audit
+```
+
+#### Security bounds (minimum gate)
+
+1. Assertion mutations fail closed without the durable signed assertion store
+   (`assertion_store_required`).
+2. Same reviewer cannot fill both roles (`four_eyes_conflict`).
+3. Assertion revoke drops quorum immediately; case returns to
+   `READY_FOR_REVIEW` when still pre-quorum.
+4. Expired assertions never satisfy workflow quorum.
+5. Audit write failure rolls back both case state and durable assertion rows.
+6. After restart, the same `operation_key` resumes idempotently from the store.
+7. Quorum `APPROVED` does not create identity links or open rollout.
+
+#### Exit for A.3.3
+
+| Evidence | Expected |
+|---|---|
+| No assertion store wired | `assertion_store_required` |
+| Same reviewer twice | `four_eyes_conflict`; one durable row |
+| Revoke primary before second eye | state → `READY_FOR_REVIEW`; quorum false |
+| Assertions past TTL | quorum false |
+| Audit fail mid-assert | case unchanged; zero durable rows |
+| Restart + replay `operation_key` | `replayed: true`; no duplicate row |
+| Two distinct approvals | case → `APPROVED`; still no `LINK_CREATED` |
+
+#### Non-goals for A.3.3
+
+- Identity link create / revoke
+- Recovery UI
+- Migration / rollout / release gate / blocker resolution
+
+#### Implementation map
+
+| Layer | Location |
+|---|---|
+| Workflow service | `app/application/recovery_service.py` |
+| API wiring (store required) | `app/api/routes/recovery.py` |
+| Negative evidence | `tests/test_pmp01a33_four_eyes_workflow.py` |
+
+### PMP-01A.3.4 — Recovery Link Lifecycle
+
+**Status:** `EVIDENCE_READY` (completed — security core freeze)  
+**Git tag:** `pmp01a34-complete`  
+**Verification:** `pytest tests/test_pmp01a34_recovery_link_lifecycle.py` — 15 passed  
+**Regression:** A.3.1–A.3.4 suites green (**54 passed**)  
+**Parent:** PMP-01A.3 Manual Recovery Execution  
+**Does not resolve:** `PMP-01A-BLK-001`  
+**Does not enable:** Recovery UI, identity migration, automatic linking, rollout, release gate
+
+#### Problem
+
+Four-eyes quorum could reach `APPROVED` without an operational, auditable
+recovery-link create/revoke path. Links must be server-issued, secret-hashed,
+single-active, and transactionally audited.
+
+#### Security bounds (minimum gate)
+
+1. Quorum required before `create_recovery_link` (`APPROVED` + live store quorum).
+2. Terminal cases cannot create links (`terminal_case_immutable`).
+3. Revoked or expired assertions cannot satisfy quorum (`assertion_expired`).
+4. Only one active recovery link per case (`active_link_exists`).
+5. Secret stored hashed only; raw token never persisted.
+6. Raw token returned once only on create; idempotent `operation_key` replay returns no token.
+7. Audit and mutation share one transaction; audit failure rolls back everything.
+8. Revoke requires reason; revoke is idempotent; `revoked_at` / `revoked_by` recorded.
+9. Expired or used links never reactivate (`link_immutable`).
+10. Assertion revoke after link create invalidates the active link in the same transaction.
+
+#### Exit for A.3.4
+
+| Evidence | Expected |
+|---|---|
+| No quorum / not `APPROVED` | no link row; fail closed |
+| Expired assertions at create | `assertion_expired`; case → `EXPIRED`; no link |
+| Terminal case create | `terminal_case_immutable` |
+| Second active link | `active_link_exists` |
+| Create success | case → `LINK_CREATED`; raw token once; DB has `token_hash` only |
+| Replay `operation_key` | `replayed: true`; `raw_token` is `None` |
+| Revoke without reason | `revoke_reason_required` |
+| Revoke success | `revoked_at` / `revoked_by`; case → `REVOKED` |
+| Audit fail on create/revoke | full rollback |
+| Reactivate used/revoked | `link_immutable` |
+| Migration | `v1_recovery_links` only; no identity/rollout tables |
+
+#### Non-goals for A.3.4
+
+- Recovery UI (next package — thin client; no policy in client)
+- Identity migration / automatic linking
+- Rollout percentage / release gate / blocker resolution
+
+#### Implementation map
+
+| Layer | Location |
+|---|---|
+| Link domain | `app/domain/recovery_link.py` |
+| Durable link store | `app/application/recovery_link_store.py` |
+| Lifecycle service | `app/application/recovery_service.py` (`create_recovery_link` / `revoke_recovery_link`) |
+| ORM model | `app/models/recovery_link.py` |
+| Migration | `migrations/versions/20260718_0005_recovery_links.*` |
+| Negative evidence | `tests/test_pmp01a34_recovery_link_lifecycle.py` |
+
+#### Freeze note
+
+Security core A.3.1–A.3.4 is frozen at tag `pmp01a34-complete`. Next work makes
+this core visible via Recovery UI without moving authorization, quorum, link
+validity, revoke rules, or state transitions into the client.
 
 ### Execution discipline
 

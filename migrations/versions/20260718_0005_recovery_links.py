@@ -1,0 +1,59 @@
+"""Recovery link lifecycle store (PMP-01A.3.4).
+
+Revision ID: 20260718_0005
+Revises: 20260718_0004
+
+Stores hashed recovery-link secrets only. No identity mapping writes.
+"""
+
+from alembic import op
+
+
+revision = "20260718_0005"
+down_revision = "20260718_0004"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.execute(
+        """
+        create table if not exists public.v1_recovery_links (
+          link_id uuid primary key default gen_random_uuid(),
+          case_id uuid not null,
+          operation_key text not null unique,
+          token_hash text not null,
+          evidence_reference_hash text not null,
+          created_by uuid not null,
+          created_at timestamptz not null default now(),
+          expires_at timestamptz not null,
+          revoked_at timestamptz,
+          revoked_by uuid,
+          revoke_reason text,
+          used_at timestamptz
+        );
+        create index if not exists v1_recovery_links_case_idx
+          on public.v1_recovery_links(case_id, created_at asc);
+        -- At most one non-revoked, non-used link per case.
+        create unique index if not exists v1_recovery_links_one_active_per_case
+          on public.v1_recovery_links(case_id)
+          where revoked_at is null and used_at is null;
+        alter table public.v1_recovery_links enable row level security;
+        do $$
+        begin
+          if not exists (
+            select 1 from pg_policies
+            where schemaname = 'public' and policyname = 'recovery links service role only'
+          ) then
+            create policy "recovery links service role only"
+              on public.v1_recovery_links for all to authenticated
+              using (false) with check (false);
+          end if;
+        end
+        $$;
+        """
+    )
+
+
+def downgrade() -> None:
+    op.execute("drop table if exists public.v1_recovery_links cascade;")
