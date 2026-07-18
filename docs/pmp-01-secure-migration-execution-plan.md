@@ -127,8 +127,8 @@ NOT_VERIFIABLE model.
 
 ## PMP-01A.3 — Manual Recovery Execution
 
-**Status:** Active — operational contract definition  
-**First work:** Operational contract (not implementation code)  
+**Status:** Active — operational contract (state machine locked first)  
+**First work:** State machine, then remaining contract sections; code later  
 **Does not automatically resolve:** `PMP-01A-BLK-001`  
 **Does not enable:** automatic linking, migration, rollout, release gate
 
@@ -205,19 +205,189 @@ That decision is not made by the A.3 implementation authors alone. Evidence
 producers and blocker-removal authority remain separated. A.3 may produce
 capability evidence; only Resolution Review may change the blocker state.
 
-### Pre-implementation contract work (current step)
+### Operational contract (concrete)
 
-Before writing recovery APIs or UI, lock:
+Contract work order: State Machine → Assertion Schema → Four-Eyes Workflow →
+Audit Boundary → Non-Goals → Authority Matrix. Implementation code starts only
+after these sections are locked.
 
-1. Case states and allowed transitions.
-2. Acceptable vs prohibited evidence types (from existing governance).
-3. Assertion schema: policy version, evidence reference hash, reviewer
-   identities, expiry, operation key.
-4. Four-eyes rules: distinct reviewers; no self-approval.
-5. Atomic transaction boundary: decision + assertion + audit together.
-6. Fail-closed negative cases and expected status codes.
-7. Explicit non-goals: no automatic linking, no email/device matching, no
-   client-provided `legacy_user_id` authority.
+#### 1. State Machine
+
+Case lifecycle states:
+
+| State | Meaning |
+|---|---|
+| `DRAFT` | Case opened; evidence collection not complete |
+| `EVIDENCE_PENDING` | Waiting for acceptable evidence package |
+| `READY_FOR_REVIEW` | Evidence hashed; awaiting first reviewer assertion |
+| `AWAITING_SECOND_APPROVAL` | First reviewer asserted; second reviewer required |
+| `APPROVED` | Four-eyes quorum met; link not yet created |
+| `LINK_CREATED` | Recovery Service created identity link |
+| `REJECTED` | Terminal — case denied |
+| `CANCELLED` | Terminal — requester/system cancelled before approval |
+| `EXPIRED` | Terminal — assertion or case timeout |
+| `REVOKED` | Terminal after link — recovery revocation completed |
+| `CLOSED` | Terminal administrative close after notification/retention start |
+
+Allowed transitions:
+
+```text
+DRAFT
+  → EVIDENCE_PENDING
+  → CANCELLED
+
+EVIDENCE_PENDING
+  → READY_FOR_REVIEW
+  → REJECTED
+  → CANCELLED
+  → EXPIRED
+
+READY_FOR_REVIEW
+  → AWAITING_SECOND_APPROVAL
+  → REJECTED
+  → CANCELLED
+  → EXPIRED
+
+AWAITING_SECOND_APPROVAL
+  → APPROVED
+  → REJECTED
+  → EXPIRED
+  → CANCELLED
+
+APPROVED
+  → LINK_CREATED
+  → EXPIRED
+  → CANCELLED   (only before link transaction commits)
+
+LINK_CREATED
+  → REVOKED
+  → CLOSED
+
+REJECTED | CANCELLED | EXPIRED | REVOKED | CLOSED
+  → (no further transitions except CLOSED retention housekeeping)
+```
+
+Terminal states: `REJECTED`, `CANCELLED`, `EXPIRED`, `REVOKED`, `CLOSED`.
+
+Timeout / cancellation:
+
+- Case without progress expires after a configured TTL (default proposal:
+  14 days from last state change).
+- Assertions expire independently; expired assertion cannot approve.
+- Cancellation is allowed only before `LINK_CREATED`.
+- After `LINK_CREATED`, only revoke or close paths apply.
+- Appeals create a **new** case; they never reopen a terminal case in place.
+
+Illegal transitions fail closed and produce an immutable audit event.
+
+#### 2. Assertion Schema
+
+Required assertion fields:
+
+| Field | Purpose |
+|---|---|
+| `assertion_id` | Unique assertion identifier |
+| `case_id` | Parent recovery case |
+| `operation_key` | Idempotency key for the decision |
+| `policy_version` | Governance policy version applied |
+| `evidence_reference_hash` | Hash of reviewed evidence package |
+| `asserted_supabase_user_id` | Canonical UUID under review |
+| `asserted_legacy_user_id` | Legacy reference under review |
+| `reviewer_id` | Authenticated reviewer principal |
+| `reviewer_role` | `primary_reviewer` or `second_reviewer` |
+| `decision` | `approve` / `reject` |
+| `rationale_code` | Machine-readable reason code (no raw secrets) |
+| `created_at` | Server timestamp |
+| `expires_at` | Assertion validity end |
+| `signature` | Server-side signature over canonical assertion payload |
+| `revoked_at` | Null unless assertion revoked |
+
+Who may sign:
+
+- Only Recovery Service signs assertions after authenticating a reviewer.
+- Clients and browsers never supply a trusted signature.
+- Reviewers authenticate; they do not self-sign authority.
+
+Validity:
+
+- Assertions are short-lived (default proposal: 24 hours).
+- Expired assertions cannot complete quorum.
+- Approval quorum requires two non-expired, non-revoked approvals from
+  distinct reviewers for the same `operation_key` and evidence hash.
+
+Revocation / versioning:
+
+- Assertion revocation is append-only (`revoked_at` set); records are not
+  deleted.
+- Policy version is immutable on an assertion; policy upgrades require a new
+  case or new assertions.
+- Schema version field may be added without rewriting history.
+
+#### 3. Four-Eyes Workflow
+
+Roles:
+
+| Role | Authority |
+|---|---|
+| Primary Reviewer | Prepare case, create first approval/rejection assertion |
+| Second Reviewer | Provide independent second approval/rejection |
+| Recovery Service | Enforce quorum, create/revoke links, write audit |
+| System | Clock, expiry, immutable audit persistence |
+
+Conflict rules:
+
+- Same principal cannot act as both primary and second reviewer on one case.
+- Self-approval is forbidden.
+- A reviewer who created the case may be primary reviewer, but cannot be
+  second reviewer.
+- Quorum = exactly two distinct approvals for approve path; one rejection by
+  either authorized reviewer may terminate to `REJECTED` per policy.
+
+#### 4. Audit Boundary
+
+Immutable:
+
+- Case state transitions
+- Assertion create/revoke events
+- Quorum decisions
+- Link create/revoke outcomes
+- Actor IDs, timestamps, operation keys, evidence hashes, policy versions
+
+May be redacted (never deleted from integrity chain):
+
+- Free-text support notes outside rationale codes
+- Contact channel details after retention window, replaced by tombstone hash
+
+Verification:
+
+- Audit stream must allow reconstruction of who changed state, when, under
+  which policy/evidence hash, and whether quorum was valid.
+- Missing audit write aborts the business transaction.
+
+#### 5. Non-Goals
+
+- Automatic linking: forbidden
+- Ad-hoc DB intervention as recovery path: forbidden
+- Client assertions as authority: forbidden
+- Legacy token decoder re-enablement as trust source: forbidden
+- Email / device / IP / fingerprint matching as proof: forbidden
+- Release gate opening as a side effect of A.3: forbidden
+- Silent migration of user data during recovery: forbidden
+
+#### 6. Authority Matrix
+
+| Operation | Sole authority |
+|---|---|
+| Case create | Reviewer API |
+| Assertion create | Reviewer (via Recovery Service signing) |
+| Assertion approve (second eye) | Second Reviewer |
+| Link create | Recovery Service |
+| Link revoke | Recovery Service |
+| Audit write | System |
+| Case close | Recovery Service |
+
+This matrix answers one question only: which single component is authorized
+to perform each security-sensitive operation.
 
 ### Execution discipline
 
