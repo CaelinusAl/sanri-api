@@ -1,51 +1,40 @@
 # app/routes/events.py
 import uuid
-from typing import Optional, Dict, Any
+from typing import Dict, Any
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_user_id
 from app.db import get_db
 from app.models.event import Event
-from app.services.auth import decode_token
 
 router = APIRouter(prefix="/events", tags=["events"])
 
 
 class EventIn(BaseModel):
-    session_id: str = "mobile-default"
-    action: str
-    domain: str = "app"
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    action: str = Field(min_length=1, max_length=100)
+    domain: str = Field(default="app", max_length=100)
     meta: Dict[str, Any] = {}
-    user_id: Optional[str] = None
-
-
-def _extract_uid(authorization: Optional[str], payload_uid: Optional[str]) -> Optional[str]:
-    if payload_uid and str(payload_uid).strip() and payload_uid != "anon":
-        return str(payload_uid).strip()
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "").strip()
-        p = decode_token(token)
-        if p and p.get("sub"):
-            return str(p["sub"])
-    return None
 
 
 @router.post("/log")
 def log_event(
     payload: EventIn,
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
-    authorization: Optional[str] = Header(default=None),
-    x_user_id: Optional[str] = Header(default=None),
 ):
-    uid = _extract_uid(authorization, payload.user_id or x_user_id)
     e = Event(
         id=str(uuid.uuid4()),
-        user_id=uid,
+        user_id=user_id,
         action=payload.action,
         domain=payload.domain,
-        meta={**payload.meta, "session_id": payload.session_id},
+        meta={**payload.meta, "session_id": str(payload.session_id)},
     )
     db.add(e)
     db.commit()

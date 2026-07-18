@@ -8,12 +8,14 @@ class MemoryStore:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def _path(self, session_id: str) -> Path:
+        if not session_id or session_id in {"default", "mobile-default"}:
+            raise ValueError("A non-shared session_id is required")
         safe = "".join(
-            ch for ch in (session_id or "default")
+            ch for ch in session_id
             if ch.isalnum() or ch in ("-", "_")
         )
         if not safe:
-            safe = "default"
+            raise ValueError("A valid session_id is required")
         return self.data_dir / f"{safe}.json"
 
     def get_memory(self, session_id: str) -> List[Dict[str, str]]:

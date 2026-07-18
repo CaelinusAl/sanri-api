@@ -40,6 +40,114 @@
 Blocker çözüm kararı ilgili REP ve Governance Health Check kayıtlarına
 eklenmeden PMP-01B veya PMP-01C başlatılamaz.
 
+## Legacy Identity Trust Model assessment
+
+Mevcut legacy sistemde üç ayrı identity davranışı görülmektedir:
+
+1. Canonical V1 Supabase JWT `sub` UUID’si server-side doğrulanabilir.
+2. Legacy HS256 token üretimi tarihsel olarak mevcut olsa da decoder
+   fail-closed durumdadır; aktif legacy session verifier yoktur.
+3. Bazı legacy yollar hâlâ client-controlled `user_id`, `X-User-Id`,
+   `device_fp` veya default session sinyallerini kabul etmektedir.
+
+İncelenen kritik örnekler:
+
+- `app/routes/events.py`: payload/header user identity ve
+  `mobile-default` session kabul ediyor.
+- `app/routes/activity.py`: auth guard olmadan integer `user_id` ile memory
+  okuma/yazma yapıyor.
+- `app/routes/device.py`: client-provided integer `user_id` ile user kaydı
+  güncelliyor.
+- `app/services/auth.py`: legacy token decoder bilinçli olarak `None`
+  döndürüyor.
+- `app/application/identity_linking.py`: yalnızca dry-run contract’ı;
+  public route veya production write yok.
+- `docs/sprint-3.2b-manual-recovery-governance.md`: manual recovery politikası
+  mevcut, fakat execution workflow ve reviewer assertion store kodda yok.
+
+### Trust model decision
+
+Mevcut kanıta göre:
+
+- **Server-side legacy verification:** bugün mevcut değil.
+- **Manual-recovery-only:** mevcut governance ile uyumlu ve savunulabilir.
+- **Automatic linking:** verified legacy proof ve uncontained client identity
+  yolları nedeniyle iptal edilmiş olarak kalmalı.
+
+Email, display name, device, IP, fingerprint, default session, client
+`legacy_user_id` veya unsigned/custom token hiçbir şekilde identity proof
+sayılmaz. `PMP-01A-BLK-001` bu nedenle implementasyon eksikliği değil, trust
+model blocker’ıdır.
+
+Bu bulgu aynı zamanda `events.py`, `activity.py`, `device.py` ve benzeri
+legacy yolların identity/ownership kararlarında fail-closed yapılması veya
+canonical doğrulama arkasına alınması gerektiğini gösterir. Bu containment
+tamamlanmadan otomatik linking veya PMP-01B başlatılamaz.
+
+## PMP-01A containment evidence / REP input
+
+**Evidence status:** Prepared — containment review  
+**Scope:** Untrusted legacy identity signal containment  
+**Production migration:** Not enabled  
+**Identity linking:** Not enabled  
+**Rollout:** 0%
+
+### Verification results
+
+| Check | Result | Evidence |
+|---|---|---|
+| Backend full test suite | PASS — 83 passed, 6 skipped | `python -m pytest -q` |
+| Targeted identity tests | PASS — included in full suite | `tests/test_legacy_identity_containment.py`, `tests/test_sprint32a_identity.py` |
+| Mobile TypeScript | PASS | `npx tsc --noEmit` |
+| Changed mobile files lint | PASS | `npx eslint lib/analytics.ts lib/LogEvent.ts lib/eventSession.ts` |
+| Full mobile lint | BLOCKED by baseline | 16 errors, 34 warnings in unrelated existing files |
+| Web event source audit | NOT VERIFIABLE | Source tree is not present in the inspected web checkout |
+
+### Known warning
+
+The backend suite emits one `PendingDeprecationWarning` from Starlette
+`formparsers.py` because the installed compatibility import uses `multipart`
+and recommends `python_multipart`. It is dependency-level, does not originate
+in the containment files, and does not fail the suite. It remains a deferred
+dependency maintenance item.
+
+### Client contract verification
+
+Mobile event consumers no longer send `user_id` or `X-User-Id`. They use the
+Supabase access token and a persisted UUID event session from
+`lib/eventSession.ts`. Legacy `mobile-default` event sessions are not sent.
+Unauthenticated event ingestion fails closed and is handled as an offline
+analytics failure.
+
+The web source checkout could not be independently verified because it
+contains built/runtime artifacts but no inspectable application source tree.
+This is a remaining verification gap, not evidence that web usage is safe.
+
+### Open risks retained for production
+
+These are integration and UX risks. They do not block committing the
+containment change, but they must remain open in REP and be resolved before
+release or rollout:
+
+1. **Mobile lint baseline** — Full mobile lint still reports pre-existing
+   errors/warnings unrelated to the containment files. Tracked separately;
+   must not grow with new changes.
+2. **Web event consumer unverified** — The inspected web checkout has no
+   source tree for event ingestion verification. Web must be audited against
+   the new `/events/log` contract before production.
+3. **Legacy `mobile-default` UX breakage** — Some legacy mobile screens still
+   send shared session IDs to fail-closed or non-event routes. Contained
+   routes reject unsafe identity, but user-visible breakage must be verified
+   and repaired before release.
+
+### REP decision
+
+This evidence is suitable as a draft REP input for the containment change.
+It does not resolve `PMP-01A-BLK-001`, authorize identity linking, authorize
+migration, or authorize rollout. The blocker remains `BLOCKED` until all
+resolution criteria are met. Commit is allowed for containment evidence;
+release and rollout remain forbidden.
+
 Güvenilir server-side legacy identity proof olmadan `legacy_user_id` client
 payload’ından alınamaz ve linking authority olarak kullanılamaz. Bu blocker,
 eksik bir endpoint implementasyonu değil, identity proof eksikliğidir.
