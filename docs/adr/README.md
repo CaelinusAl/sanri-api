@@ -30,3 +30,16 @@ legacy compatibility policy must reference an existing ADR or add a new one.
 - ADR-014: Anonymous identity policy
 - ADR-015: Relationship-aware RLS
 - ADR-016: Federated sources of truth
+
+## PMP-01A BLK-001 governance freeze (design only)
+
+Verified legacy identity source and Stream C entry decisions are frozen as
+**design documentation** (not production code). Authoritative package:
+
+- Focus brief: [`../blockers/PMP-01A-BLK-001.md`](../blockers/PMP-01A-BLK-001.md)
+- Stream A–C entry / L-06: files under [`../blockers/`](../blockers/)
+- Tag (when applied): `pmp01a39-governance-freeze`
+
+These docs do **not** open the release gate, enable automatic linking, or
+resolve `PMP-01A-BLK-001`. Implementation remains blocked until
+`ENTRY_GATE_ACCEPTED`.

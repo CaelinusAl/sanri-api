@@ -8,6 +8,11 @@
 **Program status:** PMP-01A = `BLOCKED` · Release gate = `CLOSED`  
 **Owner:** PMP-01 Program  
 **Last updated:** 2026-07-18  
+**Stream A design:** `docs/blockers/PMP-01A-BLK-001-verified-legacy-identity-source-design.md` (`DESIGN_DRAFT`)  
+**Stream B design:** `docs/blockers/PMP-01A-BLK-001-stream-b-architecture-integration.md` (`DESIGN_DRAFT`)  
+**Stream B2 review:** `docs/blockers/PMP-01A-BLK-001-stream-b2-containment-abuse-review.md` (`REVIEW_COMPLETE`)  
+**Stream C entry gate:** `docs/blockers/PMP-01A-BLK-001-stream-c-entry-gate-acceptance-pack.md` (`ENTRY_GATE_PENDING`)  
+**L-06 resolution:** `docs/blockers/PMP-01A-BLK-001-l06-resolution-decision.md` (`DECISION_DRAFT` — Option C+B recommended)
 
 ---
 
@@ -118,22 +123,47 @@ Forbidden directions:
 - Device fingerprint linking  
 - Silent DB updates to `verified` / `linked`
 
-**Exit artifact:** short design note + threat model + test list (attach to REP).
+**Exit artifact:** short design note + threat model + test list (attach to REP).  
+**Filed:** `docs/blockers/PMP-01A-BLK-001-verified-legacy-identity-source-design.md`  
+(Recommended architecture: **VLIS-BCMP** — Bounded Composite Manual Proof.  
+Awaiting Identity + Security Authority approval before any implementation.)
 
-### Stream B — Contain remaining client-authority paths
+### Stream B — Architecture Integration
 
-**Goal:** Every legacy identity/ownership path is fail-closed or behind
-canonical JWT.
+**Goal:** Design how VLIS-BCMP attaches to the frozen A.3 recovery pipeline
+with **minimal surface change** and **no security-contract changes**.
 
-**Exit artifact:** route inventory with before/after; negative tests proving
-client-controlled identity cannot authorize reads/writes.
+**Exit artifact:** integration design (choke point, ownership split, flags,
+additive audit, forbidden touches).
+
+**Filed:** `docs/blockers/PMP-01A-BLK-001-stream-b-architecture-integration.md`  
+(Recommended: **Adjacent VLIS + `submit_evidence` choke-point**.  
+Awaiting Identity + Security Authority approval before any implementation.)
+
+### Stream B2 — Containment and Abuse-Case Review
+
+**Goal:** Hostile review of VLIS choke-point integration; lock invariants,
+replay/binding/expiry/flag/TX/privileged controls; define Stream C entry gate.
+Also retain **B2-L**: contain remaining client-authority legacy routes before
+any OPERATIONAL claim.
+
+**Exit artifact:** abuse-case matrix + decisions D1–D7 + Stream C entry criteria.
+
+**Filed:** `docs/blockers/PMP-01A-BLK-001-stream-b2-containment-abuse-review.md`  
+(**Verdict:** CONDITIONAL PASS — choke point retained; I1–I12 required;  
+Stream C blocked until authorities accept entry criteria.)
 
 ### Stream C — Wire proof into manual recovery only
 
-**Goal:** The only way to create a verified identity association is the
-recovery flow (reviewer JWT → assertions → four-eyes → link → durable audit).
+**Goal:** Implement Stream A+B design under B2 invariants: VLIS module +
+choke-point guard so the only way to create a verified identity association
+is the recovery flow (reviewer JWT → VLIS seal → evidence → assertions →
+four-eyes → link → durable audit).
 
-**Exit artifact:** end-to-end security tests + audit evidence samples (redacted).
+**Exit artifact:** end-to-end security tests + audit evidence samples (redacted).  
+**Entry pack:** `docs/blockers/PMP-01A-BLK-001-stream-c-entry-gate-acceptance-pack.md`  
+**Entry status:** `ENTRY_GATE_PENDING` — Stream C must not start until
+`ENTRY_GATE_ACCEPTED` (four authority signatures).
 
 ### Stream D — Council resolution package
 
@@ -157,9 +187,15 @@ release-gate / PMP-01B readiness.
 
 ## Definition of done (team)
 
-- [ ] Stream A design approved by Identity + Security Authority  
-- [ ] Stream B containment tests green  
-- [ ] Stream C recovery-only verified association path green  
+- [x] Stream A design drafted (`DESIGN_DRAFT` — VLIS-BCMP)  
+- [x] Stream B architecture integration drafted (`DESIGN_DRAFT` — choke-point)  
+- [x] Stream B2 containment / abuse-case review filed (`REVIEW_COMPLETE`)  
+- [x] Stream C Entry Gate Acceptance Pack filed (`ENTRY_GATE_PENDING`)  
+- [x] L-06 resolution decision filed (`DECISION_DRAFT` — recommend Option C+B)  
+- [ ] L-06 decision + entry gate signed by named authorities (no false ACCEPT)  
+- [ ] Entry gate `ENTRY_GATE_ACCEPTED`  
+- [ ] L-06.1–L-06.8 contained + `L06-T*` green before OPERATIONAL  
+- [ ] Stream C implementation + recovery-only path green  
 - [ ] No client-controlled identity remains authoritative  
 - [ ] Security tests for resolution criteria green  
 - [ ] REP updated; Council marks BLK-001 `RESOLVED`  
@@ -171,6 +207,11 @@ release-gate / PMP-01B readiness.
 
 | Artifact | Path |
 |---|---|
+| Stream A design (VLIS-BCMP) | `docs/blockers/PMP-01A-BLK-001-verified-legacy-identity-source-design.md` |
+| Stream B architecture integration | `docs/blockers/PMP-01A-BLK-001-stream-b-architecture-integration.md` |
+| Stream B2 containment / abuse review | `docs/blockers/PMP-01A-BLK-001-stream-b2-containment-abuse-review.md` |
+| Stream C entry gate acceptance pack | `docs/blockers/PMP-01A-BLK-001-stream-c-entry-gate-acceptance-pack.md` |
+| L-06 resolution decision | `docs/blockers/PMP-01A-BLK-001-l06-resolution-decision.md` |
 | REP-001 | `releases/REP-001/REP.md` |
 | Operations Manual | `docs/operations/OPERATIONS-MANUAL.md` |
 | PMP execution plan (blocker section) | `docs/pmp-01-secure-migration-execution-plan.md` |

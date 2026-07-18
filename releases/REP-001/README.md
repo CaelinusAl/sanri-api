@@ -17,6 +17,9 @@ First Release Evidence Package for the PMP-01A.3 security-core freeze.
 4. [`council-approval.md`](./council-approval.md)
 5. Companion: [`../../docs/operations/OPERATIONS-MANUAL.md`](../../docs/operations/OPERATIONS-MANUAL.md)
 6. Next focus: [`../../docs/blockers/PMP-01A-BLK-001.md`](../../docs/blockers/PMP-01A-BLK-001.md)
+7. BLK-001 design freeze package (Stream A/B/B2, entry gate, L-06):
+   [`../../docs/blockers/`](../../docs/blockers/) — tag `pmp01a39-governance-freeze`
+   when present. Status: design frozen; entry gate still `PENDING`; BLK-001 OPEN.
 
 ## PDF export (optional)
 
