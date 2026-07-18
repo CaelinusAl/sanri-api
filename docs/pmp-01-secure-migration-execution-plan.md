@@ -67,6 +67,97 @@ is secure, but continuous failure on reachable UX is not product-ready.
 PMP-01A.1 may complete without completing PMP-01A. The parent workstream remains
 blocked until verified legacy identity source and remaining open risks close.
 
+## PMP-01A.2 — Web Event Contract Audit
+
+**Status:** Next  
+**Does not resolve:** `PMP-01A-BLK-001`  
+**Does not enable:** linking, migration, rollout, release gate
+
+### Problem
+
+Web event producer, backend’in canonical event contract’ını (Supabase JWT,
+UUID session, no client-controlled identity) gerçekten kullanıyor mu?
+
+### Evidence required
+
+- Inspectable web source tree mevcuttur (`package.json` + application source).
+- Event producer bulunmuş ve incelenmiştir.
+- `user_id`, `X-User-Id`, legacy token veya shared session identity olarak
+  kullanılmadığı kanıtlanmıştır.
+- Contract, backend `/events/log` gereksinimleriyle birebir uyumludur.
+
+### Exit outcomes
+
+| Result | Meaning | Consequence |
+|---|---|---|
+| `PASS` | Canonical contract verified | Evidence added to REP; risk closed |
+| `FAIL` | Unsafe identity/session signals found | Open a containment package; release gate stays closed |
+| `NOT_VERIFIABLE` | Inspectable source unavailable | Release gate remains closed; no trust assumed |
+
+Rule: **kanıt yoksa güven de yok.** Absence of source is not a pass.
+
+### Current assessment
+
+As of the latest inspectable checkout, web remains `NOT_VERIFIABLE` because the
+application source tree is not present. PMP-01A.2 therefore cannot exit `PASS`
+until inspectable source is restored.
+
+## PMP-01A.3 — Manual Recovery Execution
+
+**Status:** Planned after PMP-01A.2 evidence is recorded  
+**Does not resolve automatically:** `PMP-01A-BLK-001`  
+**Does not enable:** automatic linking, migration, rollout
+
+### Problem
+
+Manual recovery is currently policy-defined but not an operational capability.
+Without executable controls, recovery cannot safely mint audited identity
+decisions.
+
+### Target flow
+
+```text
+Policy
+  → Reviewer API
+  → Signed Assertion Store
+  → Four-eyes Approval
+  → Audit
+  → Recovery UI
+  → Operational
+```
+
+### Evidence required
+
+- Reviewer case create/approve/reject APIs exist.
+- Signed assertion store records policy version, evidence reference, reviewer
+  identity, and expiry.
+- Four-eyes approval is enforced in the same transactional boundary as the
+  recovery decision.
+- Audit is mandatory; missing audit rolls back the decision.
+- Recovery UI never accepts client-controlled legacy identity as authority.
+- Negative tests cover forged/reused approvals, missing second reviewer,
+  expired assertions, and conflict states.
+
+### Exit
+
+Manual recovery status changes from
+`POLICY_DEFINED / NOT_OPERATIONAL` to `OPERATIONAL` only when the evidence
+above is produced. Until then, no recovery path may create `verified` or
+`linked` identity states through automation or ad-hoc database edits.
+
+### Execution discipline
+
+Every subsequent package is reviewed with the same questions:
+
+1. Problem nedir?
+2. Kanıt nedir?
+3. Exit nedir?
+4. Blocker var mı?
+5. Release gate etkileniyor mu?
+
+If any answer is missing or non-objective, the package remains `BLOCKED`,
+`NOT_STARTED`, or `VALUE_UNPROVEN`.
+
 ### Blocker metadata
 
 | Field | Value |

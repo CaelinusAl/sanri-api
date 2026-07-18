@@ -140,13 +140,12 @@ Current execution status: **PMP-01A BLOCKED** —
 
 Sıradaki çalışma blocker’ı zorla aşmak değildir. Öncelik:
 
-1. **PMP-01A.1** — erişilebilir legacy ask yüzeylerini V1’e yönlendirmek veya
-   açık product fallback ile fail-closed kapatmak,
-2. açık REP risklerini kapatmak (web event consumer doğrulaması),
-3. manual-recovery-only stratejisinin operasyonel olarak uygulanabilirliğini
-   kanıtlamak,
-4. ancak ardından verified legacy identity source seçeneklerini yeniden
-   değerlendirmek.
+1. **PMP-01A.1** — Reachable Legacy Ask Surface Containment — completed.
+2. **PMP-01A.2** — Web Event Contract Audit — inspectable source zorunlu;
+   `PASS` / `FAIL` / `NOT_VERIFIABLE` exit outcomes; kanıt yoksa güven yok.
+3. **PMP-01A.3** — Manual Recovery Execution — policy → reviewer API →
+   signed assertion store → four-eyes → audit → UI → operational.
+4. Ancak kanıtlardan sonra `PMP-01A-BLK-001` resolution review.
 
 Bu riskler kapanmadan hiçbir release gate açılmaz. `BLOCKED` ise blocker
 çözülür; `READY` ise uygulanır; `DONE` demeden kanıt istenir; `RELEASE`
