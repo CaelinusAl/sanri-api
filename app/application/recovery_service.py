@@ -1,4 +1,4 @@
-"""Recovery mutations with four-eyes (A.3.3) and recovery link lifecycle (A.3.4)."""
+"""Recovery mutations with four-eyes (A.3.3), links (A.3.4), durable cases (A.3.6)."""
 
 from __future__ import annotations
 
@@ -62,6 +62,7 @@ class RecoveryCaseRecord:
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime | None = None
     assertions: list[AssertionRecord] = field(default_factory=list)
+    state_version: int = 0
 
 
 class AuditWriter(Protocol):
@@ -80,11 +81,83 @@ class InMemoryAuditWriter:
 
 
 class RecoveryStore:
-    """In-process case store. Assertions are durable via Assertion Store (A.3.2)."""
+    """In-process case store (A.3.1 harness). Durable path is DurableRecoveryCaseStore."""
 
     def __init__(self) -> None:
         self.cases: dict[UUID, RecoveryCaseRecord] = {}
         self.operations: dict[str, UUID] = {}
+
+    def get(self, case_id: UUID) -> RecoveryCaseRecord | None:
+        return self.cases.get(case_id)
+
+    def get_case_id_for_operation(self, operation_key: str) -> UUID | None:
+        return self.operations.get(operation_key)
+
+    def list_open_for_identity(
+        self,
+        *,
+        subject_user_id: UUID,
+        claimed_legacy_identity_ref: str,
+    ) -> list[RecoveryCaseRecord]:
+        out: list[RecoveryCaseRecord] = []
+        for case in self.cases.values():
+            if case.state in TERMINAL_STATES:
+                continue
+            if (
+                case.subject_user_id == subject_user_id
+                or case.claimed_legacy_identity_ref == claimed_legacy_identity_ref
+            ):
+                out.append(case)
+        return out
+
+    def bind_operation(self, operation_key: str, case_id: UUID) -> None:
+        existing = self.operations.get(operation_key)
+        if existing is not None and existing != case_id:
+            raise RecoveryError(
+                "operation_key_conflict",
+                "operation_key already bound to a different recovery case",
+            )
+        self.operations[operation_key] = case_id
+
+    def create(self, case: RecoveryCaseRecord, *, operation_key: str) -> RecoveryCaseRecord:
+        if self.list_open_for_identity(
+            subject_user_id=case.subject_user_id,
+            claimed_legacy_identity_ref=case.claimed_legacy_identity_ref,
+        ):
+            raise RecoveryError(
+                "duplicate_open_case",
+                "At most one non-terminal recovery case per subject or legacy identity",
+            )
+        case.state_version = 0
+        self.cases[case.case_id] = case
+        self.bind_operation(operation_key, case.case_id)
+        return case
+
+    def save(
+        self,
+        case: RecoveryCaseRecord,
+        *,
+        expected_version: int,
+        operation_key: str | None = None,
+    ) -> RecoveryCaseRecord:
+        current = self.cases.get(case.case_id)
+        if current is None:
+            raise RecoveryError("case_not_found", "Recovery case not found")
+        if current.state_version != expected_version:
+            raise RecoveryError(
+                "conflict_state",
+                "Concurrent case mutation rejected; reload and retry",
+            )
+        if current.state in TERMINAL_STATES and case.state not in TERMINAL_STATES:
+            raise RecoveryError(
+                "terminal_case_immutable",
+                "Terminal recovery cases cannot be mutated",
+            )
+        case.state_version = expected_version + 1
+        self.cases[case.case_id] = case
+        if operation_key is not None:
+            self.bind_operation(operation_key, case.case_id)
+        return case
 
 
 def _rationale_to_code(rationale: str) -> str:
@@ -161,6 +234,15 @@ class RecoveryService:
             return
         case.assertions = [_signed_to_record(a) for a in assertion_store.list_for_case(case.case_id)]
 
+    def _persist(
+        self,
+        case: RecoveryCaseRecord,
+        *,
+        expected_version: int,
+        operation_key: str | None = None,
+    ) -> None:
+        self.store.save(case, expected_version=expected_version, operation_key=operation_key)
+
     def _recompute_review_state(
         self,
         case: RecoveryCaseRecord,
@@ -213,9 +295,9 @@ class RecoveryService:
                 action=action,
             )
 
-    def _expire_if_needed(self, case: RecoveryCaseRecord) -> None:
+    def _expire_if_needed(self, case: RecoveryCaseRecord) -> bool:
         if case.state in TERMINAL_STATES:
-            return
+            return False
         if case.expires_at and self._now() >= case.expires_at:
             prev = case.state
             case.state = RecoveryCaseState.EXPIRED
@@ -231,6 +313,8 @@ class RecoveryService:
                 )
             except Exception:
                 pass
+            return True
+        return False
 
     def _audit(
         self,
@@ -290,20 +374,22 @@ class RecoveryService:
         subject_user_id: UUID,
         claimed_legacy_identity_ref: str,
     ) -> None:
-        for case in self.store.cases.values():
-            if case.state in TERMINAL_STATES:
-                continue
-            if case.subject_user_id == subject_user_id or case.claimed_legacy_identity_ref == claimed_legacy_identity_ref:
-                raise RecoveryError(
-                    "duplicate_open_case",
-                    "At most one non-terminal recovery case per subject or legacy identity",
-                )
+        open_cases = self.store.list_open_for_identity(
+            subject_user_id=subject_user_id,
+            claimed_legacy_identity_ref=claimed_legacy_identity_ref,
+        )
+        if open_cases:
+            raise RecoveryError(
+                "duplicate_open_case",
+                "At most one non-terminal recovery case per subject or legacy identity",
+            )
 
     def get_case(self, case_id: UUID) -> RecoveryCaseRecord:
-        case = self.store.cases.get(case_id)
+        case = self.store.get(case_id)
         if case is None:
             raise RecoveryError("case_not_found", "Recovery case not found")
-        self._expire_if_needed(case)
+        expected = case.state_version
+        mutated = self._expire_if_needed(case)
         self._sync_case_assertions(case)
         # Expired assertions may drop quorum while still awaiting second approval.
         if (
@@ -327,8 +413,19 @@ class RecoveryService:
                         operation_key=f"system-quorum-recheck-{case.case_id}",
                         action="quorum_recheck",
                     )
+                    mutated = True
                 except RecoveryError:
                     pass
+        if mutated:
+            try:
+                self._persist(case, expected_version=expected)
+                self._commit_tx()
+            except RecoveryError:
+                self._rollback_tx()
+                refreshed = self.store.get(case_id)
+                if refreshed is not None:
+                    case = refreshed
+                    self._sync_case_assertions(case)
         return case
 
     def create_case(
@@ -340,7 +437,7 @@ class RecoveryService:
         claimed_legacy_identity_ref: str,
         notes: str | None = None,
     ) -> tuple[RecoveryCaseRecord, bool]:
-        existing = self.store.operations.get(operation_key)
+        existing = self.store.get_case_id_for_operation(operation_key)
         if existing is not None:
             return self.get_case(existing), True
 
@@ -367,13 +464,15 @@ class RecoveryService:
                 action="create_case",
                 detail={"subject_user_id": str(subject_user_id)},
             )
+            self.store.create(case, operation_key=operation_key)
+            self._commit_tx()
         except RecoveryError:
+            self._rollback_tx()
             raise
         except Exception as exc:
+            self._rollback_tx()
             raise self._rollback_audit_failure() from exc
 
-        self.store.cases[case.case_id] = case
-        self.store.operations[operation_key] = case.case_id
         return case, False
 
     def submit_evidence(
@@ -385,7 +484,7 @@ class RecoveryService:
         evidence_hash: str,
         evidence_type: str,
     ) -> tuple[RecoveryCaseRecord, bool]:
-        existing = self.store.operations.get(operation_key)
+        existing = self.store.get_case_id_for_operation(operation_key)
         if existing is not None:
             return self.get_case(existing), True
 
@@ -393,6 +492,7 @@ class RecoveryService:
         if case.state in TERMINAL_STATES:
             raise RecoveryError("terminal_case_immutable", "Terminal recovery cases cannot be mutated")
 
+        expected = case.state_version
         snapshot_state = case.state
         snapshot_hash = case.evidence_hash
         snapshot_type = case.evidence_type
@@ -433,20 +533,23 @@ class RecoveryService:
                     operation_key=operation_key,
                     detail={"evidence_type": evidence_type},
                 )
+            self._persist(case, expected_version=expected, operation_key=operation_key)
+            self._commit_tx()
         except RecoveryError:
+            self._rollback_tx()
             case.state = snapshot_state
             case.evidence_hash = snapshot_hash
             case.evidence_type = snapshot_type
             case.updated_at = snapshot_updated
             raise
         except Exception as exc:
+            self._rollback_tx()
             case.state = snapshot_state
             case.evidence_hash = snapshot_hash
             case.evidence_type = snapshot_type
             case.updated_at = snapshot_updated
             raise self._rollback_audit_failure() from exc
 
-        self.store.operations[operation_key] = case.case_id
         self._sync_case_assertions(case)
         return case, False
 
@@ -471,7 +574,7 @@ class RecoveryService:
                     "operation_key already bound to a different recovery case",
                 )
             self._sync_case_assertions(case)
-            self.store.operations[operation_key] = case.case_id
+            self.store.bind_operation(operation_key, case.case_id)
             return case, _signed_to_record(existing), True
 
         case = self.get_case(case_id)
@@ -485,9 +588,11 @@ class RecoveryService:
         if not case.evidence_hash:
             raise RecoveryError("evidence_required", "Evidence hash is required before assertions")
 
+        expected = case.state_version
         snapshot_state = case.state
         snapshot_updated = case.updated_at
         snapshot_assertions = list(case.assertions)
+        snapshot_version = case.state_version
 
         try:
             signed, _replayed = assertion_store.create(
@@ -543,12 +648,14 @@ class RecoveryService:
                     detail={"assertion_id": str(signed.assertion_id)},
                 )
 
+            self._persist(case, expected_version=expected, operation_key=operation_key)
             self._commit_tx()
         except RecoveryError as exc:
             self._rollback_tx()
             case.state = snapshot_state
             case.updated_at = snapshot_updated
             case.assertions = snapshot_assertions
+            case.state_version = snapshot_version
             if exc.code == "four_eyes_conflict":
                 try:
                     self._audit(
@@ -568,10 +675,10 @@ class RecoveryService:
             case.state = snapshot_state
             case.updated_at = snapshot_updated
             case.assertions = snapshot_assertions
+            case.state_version = snapshot_version
             raise self._rollback_audit_failure() from exc
 
         self._sync_case_assertions(case)
-        self.store.operations[operation_key] = case.case_id
         return case, _signed_to_record(signed), False
 
     def revoke_assertion(
@@ -585,7 +692,7 @@ class RecoveryService:
         """EC-02: revoke drops quorum immediately; case returns to reviewable state."""
         assertion_store = self._require_assertion_store()
 
-        existing_op = self.store.operations.get(operation_key)
+        existing_op = self.store.get_case_id_for_operation(operation_key)
         if existing_op is not None:
             case = self.get_case(case_id)
             assertion = assertion_store.get(assertion_id)
@@ -595,8 +702,10 @@ class RecoveryService:
         if case.state in TERMINAL_STATES:
             raise RecoveryError("terminal_case_immutable", "Terminal recovery cases cannot be mutated")
 
+        expected = case.state_version
         snapshot_state = case.state
         snapshot_updated = case.updated_at
+        snapshot_version = case.state_version
         try:
             assertion = assertion_store.revoke(assertion_id)
             if assertion.case_id != case.case_id:
@@ -652,20 +761,22 @@ class RecoveryService:
                         detail={"assertion_id": str(assertion_id)},
                     )
 
+            self._persist(case, expected_version=expected, operation_key=operation_key)
             self._commit_tx()
         except RecoveryError:
             self._rollback_tx()
             case.state = snapshot_state
             case.updated_at = snapshot_updated
+            case.state_version = snapshot_version
             raise
         except Exception as exc:
             self._rollback_tx()
             case.state = snapshot_state
             case.updated_at = snapshot_updated
+            case.state_version = snapshot_version
             raise self._rollback_audit_failure() from exc
 
         self._sync_case_assertions(case)
-        self.store.operations[operation_key] = case.case_id
         return case, assertion, False
 
     def create_recovery_link(
@@ -691,7 +802,7 @@ class RecoveryService:
                     "operation_key_conflict",
                     "operation_key already bound to a different recovery case",
                 )
-            self.store.operations[operation_key] = case.case_id
+            self.store.bind_operation(operation_key, case.case_id)
             return case, existing, None, True
 
         case = self.get_case(case_id)
@@ -709,8 +820,10 @@ class RecoveryService:
             case_id=case.case_id,
             evidence_reference_hash=case.evidence_hash,
         ):
+            expected = case.state_version
             snapshot_state = case.state
             snapshot_updated = case.updated_at
+            snapshot_version = case.state_version
             try:
                 self._transition(
                     case,
@@ -720,18 +833,22 @@ class RecoveryService:
                     action="link_create_quorum_expired",
                     detail={"reason": "assertion_expired"},
                 )
+                self._persist(case, expected_version=expected, operation_key=operation_key)
                 self._commit_tx()
             except Exception:
                 self._rollback_tx()
                 case.state = snapshot_state
                 case.updated_at = snapshot_updated
+                case.state_version = snapshot_version
             raise RecoveryError(
                 "assertion_expired",
                 "Expired or revoked assertions cannot satisfy quorum for link create",
             )
 
+        expected = case.state_version
         snapshot_state = case.state
         snapshot_updated = case.updated_at
+        snapshot_version = case.state_version
         try:
             link, raw_token, _ = link_store.create(
                 case_id=case.case_id,
@@ -747,19 +864,21 @@ class RecoveryService:
                 action="create_recovery_link",
                 detail={"link_id": str(link.link_id)},
             )
+            self._persist(case, expected_version=expected, operation_key=operation_key)
             self._commit_tx()
         except RecoveryError:
             self._rollback_tx()
             case.state = snapshot_state
             case.updated_at = snapshot_updated
+            case.state_version = snapshot_version
             raise
         except Exception as exc:
             self._rollback_tx()
             case.state = snapshot_state
             case.updated_at = snapshot_updated
+            case.state_version = snapshot_version
             raise self._rollback_audit_failure() from exc
 
-        self.store.operations[operation_key] = case.case_id
         return case, link, raw_token, False
 
     def revoke_recovery_link(
@@ -774,7 +893,7 @@ class RecoveryService:
         """Revoke a recovery link. Reason required. Idempotent on operation_key / already-revoked."""
         link_store = self._require_link_store()
 
-        existing_op = self.store.operations.get(operation_key)
+        existing_op = self.store.get_case_id_for_operation(operation_key)
         if existing_op is not None:
             case = self.get_case(case_id)
             if link_id is not None:
@@ -811,8 +930,10 @@ class RecoveryService:
                     raise RecoveryError("link_not_found", "No recovery link found for case")
                 link = links[-1]
 
+        expected = case.state_version
         snapshot_state = case.state
         snapshot_updated = case.updated_at
+        snapshot_version = case.state_version
         try:
             revoked_link, already = link_store.revoke(
                 link.link_id,
@@ -847,19 +968,21 @@ class RecoveryService:
                         "already_revoked": True,
                     },
                 )
+            self._persist(case, expected_version=expected, operation_key=operation_key)
             self._commit_tx()
         except RecoveryError:
             self._rollback_tx()
             case.state = snapshot_state
             case.updated_at = snapshot_updated
+            case.state_version = snapshot_version
             raise
         except Exception as exc:
             self._rollback_tx()
             case.state = snapshot_state
             case.updated_at = snapshot_updated
+            case.state_version = snapshot_version
             raise self._rollback_audit_failure() from exc
 
-        self.store.operations[operation_key] = case.case_id
         return case, revoked_link, False
 
     def cancel_case(
@@ -870,7 +993,7 @@ class RecoveryService:
         operation_key: str,
         reason: str,
     ) -> tuple[RecoveryCaseRecord, bool]:
-        existing = self.store.operations.get(operation_key)
+        existing = self.store.get_case_id_for_operation(operation_key)
         if existing is not None:
             return self.get_case(existing), True
 
@@ -878,8 +1001,10 @@ class RecoveryService:
         if case.state in TERMINAL_STATES:
             raise RecoveryError("terminal_case_immutable", "Terminal recovery cases cannot be mutated")
 
+        expected = case.state_version
         snapshot_state = case.state
         snapshot_updated = case.updated_at
+        snapshot_version = case.state_version
         try:
             self._transition(
                 case,
@@ -889,14 +1014,21 @@ class RecoveryService:
                 action="cancel_case",
                 detail={"reason": reason},
             )
+            self._persist(case, expected_version=expected, operation_key=operation_key)
+            self._commit_tx()
         except RecoveryError:
-            raise
-        except Exception as exc:
+            self._rollback_tx()
             case.state = snapshot_state
             case.updated_at = snapshot_updated
+            case.state_version = snapshot_version
+            raise
+        except Exception as exc:
+            self._rollback_tx()
+            case.state = snapshot_state
+            case.updated_at = snapshot_updated
+            case.state_version = snapshot_version
             raise self._rollback_audit_failure() from exc
 
-        self.store.operations[operation_key] = case.case_id
         return case, False
 
 
