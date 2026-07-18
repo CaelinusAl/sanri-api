@@ -22,8 +22,8 @@
 | Release gate | `CLOSED` |
 | Automatic linking | `DISABLED` |
 | Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` |
-| Web event contract | `NOT_VERIFIABLE` |
-| Legacy reachable UX | `CONTAINMENT_IN_PROGRESS` (PMP-01A.1) |
+| Web event contract | `NOT_VERIFIABLE` (PMP-01A.2 closed) |
+| Legacy reachable UX | Contained by PMP-01A.1; residual deep-links fail closed |
 | PMP-01B | `NOT_STARTED` |
 
 ## PMP-01A.1 — Reachable Legacy Ask Surface Containment
@@ -69,14 +69,13 @@ blocked until verified legacy identity source and remaining open risks close.
 
 ## PMP-01A.2 — Web Event Contract Audit
 
-**Status:** Next  
+**Status:** Closed — `NOT_VERIFIABLE`  
 **Does not resolve:** `PMP-01A-BLK-001`  
 **Does not enable:** linking, migration, rollout, release gate
 
 ### Problem
 
-Web event producer, backend’in canonical event contract’ını (Supabase JWT,
-UUID session, no client-controlled identity) gerçekten kullanıyor mu?
+Web event producer’ın canonical identity contract’ına uyumu doğrulanamıyor.
 
 ### Evidence required
 
@@ -94,13 +93,37 @@ UUID session, no client-controlled identity) gerçekten kullanıyor mu?
 | `FAIL` | Unsafe identity/session signals found | Open a containment package; release gate stays closed |
 | `NOT_VERIFIABLE` | Inspectable source unavailable | Release gate remains closed; no trust assumed |
 
-Rule: **kanıt yoksa güven de yok.** Absence of source is not a pass.
+Rule: **kanıt yoksa güven de yok.** There is no fourth outcome such as
+“probably correct.” Absence of source is not a pass.
 
-### Current assessment
+### Execution record
 
-As of the latest inspectable checkout, web remains `NOT_VERIFIABLE` because the
-application source tree is not present. PMP-01A.2 therefore cannot exit `PASS`
-until inspectable source is restored.
+First step performed: verify inspectable source existence (not code review).
+
+Checkout audited: `C:\sanri\asksanri-frontend`  
+Git HEAD: `65bf29a`  
+Remote: `https://github.com/CaelinusAl/asksanri-frontend.git`
+
+Observed root contents:
+
+- present: `.git`, `.vite`, `dev-dist`, `dist`, `node_modules`, `public`, `.env`
+- absent: `package.json`, `src/`, `app/`
+
+Search for `events/log`, `X-User-Id`, and `mobile-default` outside build and
+dependency directories returned no matches. This is not evidence of safety;
+it is evidence that producer source is unavailable for audit.
+
+### Exit decision
+
+**Result:** `NOT_VERIFIABLE`  
+**Reason:** Inspectable application source is not present.  
+**Release gate:** remains `CLOSED`  
+**PMP-01A-BLK-001:** unchanged  
+**Assumption forbidden:** web producer is not presumed compliant.
+
+PMP-01A.2 is closed with this status. Re-opening requires a restored
+inspectable source tree and a new audit under the same PASS/FAIL/
+NOT_VERIFIABLE model.
 
 ## PMP-01A.3 — Manual Recovery Execution
 

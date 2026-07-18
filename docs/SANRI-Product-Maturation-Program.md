@@ -141,10 +141,11 @@ Current execution status: **PMP-01A BLOCKED** —
 Sıradaki çalışma blocker’ı zorla aşmak değildir. Öncelik:
 
 1. **PMP-01A.1** — Reachable Legacy Ask Surface Containment — completed.
-2. **PMP-01A.2** — Web Event Contract Audit — inspectable source zorunlu;
-   `PASS` / `FAIL` / `NOT_VERIFIABLE` exit outcomes; kanıt yoksa güven yok.
-3. **PMP-01A.3** — Manual Recovery Execution — policy → reviewer API →
-   signed assertion store → four-eyes → audit → UI → operational.
+2. **PMP-01A.2** — Web Event Contract Audit — closed as `NOT_VERIFIABLE`
+   (inspectable source absent; no trust assumed).
+3. **PMP-01A.3** — Manual Recovery Execution — next planned package;
+   policy → reviewer API → signed assertion store → four-eyes → audit →
+   UI → operational.
 4. Ancak kanıtlardan sonra `PMP-01A-BLK-001` resolution review.
 
 Bu riskler kapanmadan hiçbir release gate açılmaz. `BLOCKED` ise blocker
