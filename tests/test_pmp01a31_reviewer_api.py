@@ -416,10 +416,10 @@ def test_duplicate_open_case_rejected(service):
 
 
 def test_endpoints_do_not_expose_link_or_rollout_controls(client):
-    # No automatic linking / rollout endpoints under recovery reviewer API.
+    # Recovery link UI paths are allowed; automatic identity linking / rollout are not.
     paths = {getattr(r, "path", "") for r in app.routes}
     recovery_paths = {p for p in paths if "/v1/recovery" in p}
     assert recovery_paths
-    assert not any("link" in p for p in recovery_paths)
     assert not any("rollout" in p for p in recovery_paths)
     assert not any("automatic" in p for p in recovery_paths)
+    assert not any("identity" in p for p in recovery_paths)

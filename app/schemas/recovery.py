@@ -63,3 +63,44 @@ class AssertionResponse(BaseModel):
 class MutationResponse(BaseModel):
     case: RecoveryCaseResponse
     replayed: bool = False
+
+
+class CreateRecoveryLinkRequest(BaseModel):
+    """Thin-client request. Server derives reviewer identity and enforces quorum."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: UUID
+    operation_key: str = Field(min_length=8, max_length=128)
+
+
+class RevokeRecoveryLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: UUID
+    operation_key: str = Field(min_length=8, max_length=128)
+    reason: str = Field(min_length=1, max_length=2000)
+    link_id: UUID | None = None
+
+
+class RecoveryLinkResponse(BaseModel):
+    link_id: UUID
+    case_id: UUID
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    revoked_by: UUID | None = None
+    used_at: datetime | None = None
+
+
+class CreateRecoveryLinkResponse(BaseModel):
+    case: RecoveryCaseResponse
+    link: RecoveryLinkResponse
+    raw_token: str | None = None
+    replayed: bool = False
+
+
+class RevokeRecoveryLinkResponse(BaseModel):
+    case: RecoveryCaseResponse
+    link: RecoveryLinkResponse
+    replayed: bool = False

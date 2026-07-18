@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SANRI Recovery Reviewer Console</title>
+  <style>
+    :root {
+      --bg0: #12141a;
+      --bg1: #1a1f2a;
+      --ink: #e8e4dc;
+      --muted: #9a9488;
+      --line: #2c3340;
+      --accent: #c4a574;
+      --danger: #c47a6a;
+      --ok: #7a9e7e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "Iowan Old Style", Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 420px at 10% -10%, #243044 0%, transparent 55%),
+        linear-gradient(165deg, var(--bg1), var(--bg0));
+      padding: 24px;
+    }
+    main { max-width: 880px; margin: 0 auto; display: grid; gap: 16px; }
+    h1 { margin: 0; font-size: 1.6rem; font-weight: 600; letter-spacing: 0.02em; }
+    .sub { color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
+    .banner {
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      padding: 12px 14px;
+      background: rgba(0,0,0,.22);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    section {
+      border: 1px solid var(--line);
+      background: rgba(18, 20, 26, 0.72);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+    input, textarea, button {
+      font: inherit;
+      border: 1px solid var(--line);
+      background: #0f1218;
+      color: var(--ink);
+      padding: 8px 10px;
+      border-radius: 0;
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 720px) { .row { grid-template-columns: 1fr; } }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    button { cursor: pointer; background: #1c2430; }
+    button.primary { background: #2a241c; border-color: var(--accent); color: var(--accent); }
+    button.danger { border-color: var(--danger); color: var(--danger); }
+    pre {
+      margin: 0;
+      padding: 12px;
+      background: #0b0d12;
+      border: 1px solid var(--line);
+      overflow: auto;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .ok { color: var(--ok); }
+    .err { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Recovery Reviewer Console</h1>
+      <p class="sub">Thin client only. Authorization, quorum, link validity, revoke rules, and state transitions are evaluated exclusively by the server.</p>
+    </header>
+
+    <div class="banner">
+      This page never decides eligibility. It only sends a reviewer JWT and operation payloads to
+      <code>/v1/recovery/*</code> and renders the server response. Do not store raw recovery tokens.
+    </div>
+
+    <section>
+      <label>API base (default: same origin)
+        <input id="apiBase" value="" placeholder="https://api.example.com" />
+      </label>
+      <label>Reviewer access token (Bearer)
+        <textarea id="token" placeholder="Paste Supabase access token with recovery_reviewer role"></textarea>
+      </label>
+      <label>Case ID
+        <input id="caseId" placeholder="uuid" />
+      </label>
+    </section>
+
+    <section>
+      <strong>Read case status</strong>
+      <div class="actions">
+        <button type="button" id="btnGetCase" class="primary">GET /v1/recovery/cases/{case_id}</button>
+      </div>
+    </section>
+
+    <section>
+      <strong>Create recovery link</strong>
+      <p class="sub">Server enforces APPROVED + live quorum. Client only supplies case_id and operation_key.</p>
+      <label>operation_key
+        <input id="linkCreateKey" />
+      </label>
+      <div class="actions">
+        <button type="button" id="btnCreateLink" class="primary">POST /v1/recovery/link/create</button>
+        <button type="button" id="btnNewCreateKey">New operation_key</button>
+      </div>
+    </section>
+
+    <section>
+      <strong>Revoke recovery link</strong>
+      <p class="sub">Reason is required by the server.</p>
+      <div class="row">
+        <label>operation_key
+          <input id="linkRevokeKey" />
+        </label>
+        <label>link_id (optional)
+          <input id="linkId" placeholder="uuid" />
+        </label>
+      </div>
+      <label>reason
+        <input id="revokeReason" />
+      </label>
+      <div class="actions">
+        <button type="button" id="btnRevokeLink" class="danger">POST /v1/recovery/link/revoke</button>
+        <button type="button" id="btnNewRevokeKey">New operation_key</button>
+      </div>
+    </section>
+
+    <section>
+      <strong>Server result</strong>
+      <div id="status" class="sub">No request yet.</div>
+      <pre id="out">{}</pre>
+    </section>
+  </main>
+
+  <script>
+    // Thin client: transport only. No quorum / eligibility / policy evaluation.
+    function opKey(prefix) {
+      if (crypto.randomUUID) return prefix + "-" + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+      return prefix + "-" + String(Date.now()) + Math.random().toString(16).slice(2, 10);
+    }
+    function $(id) { return document.getElementById(id); }
+    function base() {
+      const v = $("apiBase").value.trim();
+      return v ? v.replace(/\/$/, "") : "";
+    }
+    function authHeaders() {
+      const token = $("token").value.trim();
+      if (!token) throw new Error("Reviewer token required");
+      return {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      };
+    }
+    function show(status, payload, ok) {
+      $("status").textContent = status;
+      $("status").className = ok ? "ok" : "err";
+      $("out").textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+    }
+    async function api(method, path, body) {
+      const url = base() + path;
+      const res = await fetch(url, {
+        method,
+        headers: authHeaders(),
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      let data;
+      try { data = await res.json(); } catch (_) { data = { raw: await res.text() }; }
+      show(method + " " + url + " → " + res.status, data, res.ok);
+      return { res, data };
+    }
+    function requireCaseId() {
+      const caseId = $("caseId").value.trim();
+      if (!caseId) throw new Error("Case ID required");
+      return caseId;
+    }
+
+    $("linkCreateKey").value = opKey("link-create");
+    $("linkRevokeKey").value = opKey("link-revoke");
+    $("btnNewCreateKey").onclick = () => { $("linkCreateKey").value = opKey("link-create"); };
+    $("btnNewRevokeKey").onclick = () => { $("linkRevokeKey").value = opKey("link-revoke"); };
+
+    $("btnGetCase").onclick = async () => {
+      try {
+        const caseId = requireCaseId();
+        await api("GET", "/v1/recovery/cases/" + encodeURIComponent(caseId));
+      } catch (e) { show(String(e.message || e), {}, false); }
+    };
+    $("btnCreateLink").onclick = async () => {
+      try {
+        await api("POST", "/v1/recovery/link/create", {
+          case_id: requireCaseId(),
+          operation_key: $("linkCreateKey").value.trim(),
+        });
+      } catch (e) { show(String(e.message || e), {}, false); }
+    };
+    $("btnRevokeLink").onclick = async () => {
+      try {
+        const body = {
+          case_id: requireCaseId(),
+          operation_key: $("linkRevokeKey").value.trim(),
+          reason: $("revokeReason").value,
+        };
+        const linkId = $("linkId").value.trim();
+        if (linkId) body.link_id = linkId;
+        await api("POST", "/v1/recovery/link/revoke", body);
+      } catch (e) { show(String(e.message || e), {}, false); }
+    };
+  </script>
+</body>
+</html>
