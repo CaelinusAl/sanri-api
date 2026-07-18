@@ -140,14 +140,17 @@ Current execution status: **PMP-01A BLOCKED** —
 
 Sıradaki çalışma blocker’ı zorla aşmak değildir. Öncelik:
 
-1. açık REP risklerini kapatmak (`mobile-default`/legacy ask UX, web event
-   consumer doğrulaması),
-2. manual-recovery-only stratejisinin operasyonel olarak uygulanabilirliğini
+1. **PMP-01A.1** — erişilebilir legacy ask yüzeylerini V1’e yönlendirmek veya
+   açık product fallback ile fail-closed kapatmak,
+2. açık REP risklerini kapatmak (web event consumer doğrulaması),
+3. manual-recovery-only stratejisinin operasyonel olarak uygulanabilirliğini
    kanıtlamak,
-3. ancak ardından verified legacy identity source seçeneklerini yeniden
+4. ancak ardından verified legacy identity source seçeneklerini yeniden
    değerlendirmek.
 
-Bu riskler kapanmadan hiçbir release gate açılmaz.
+Bu riskler kapanmadan hiçbir release gate açılmaz. `BLOCKED` ise blocker
+çözülür; `READY` ise uygulanır; `DONE` demeden kanıt istenir; `RELEASE`
+demeden REP ve release gate kontrol edilir.
 
 Amaç:
 

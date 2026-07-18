@@ -23,8 +23,49 @@
 | Automatic linking | `DISABLED` |
 | Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` |
 | Web event contract | `NOT_VERIFIABLE` |
-| Legacy reachable UX | `UNSAFE_FOR_RELEASE` |
+| Legacy reachable UX | `CONTAINMENT_IN_PROGRESS` (PMP-01A.1) |
 | PMP-01B | `NOT_STARTED` |
+
+## PMP-01A.1 — Reachable Legacy Ask Surface Containment
+
+**Status:** Active execution  
+**Does not resolve:** `PMP-01A-BLK-001`  
+**Does not enable:** linking, migration, rollout, release gate
+
+### Problem
+
+Reachable product surfaces still call fail-closed `/bilinc-alani/*`. Backend 401
+is secure, but continuous failure on reachable UX is not product-ready.
+
+### Evidence
+
+- Client transport rejects any `/bilinc-alani/` request before network I/O with
+  an explicit product message.
+- Primary navigation entry points (`gates` SANRI, `my_area` deepen, city
+  detail) route to authenticated `/(tabs)/chat` instead of `sanri_flow`.
+- Legacy helper `askSanri` is fail-closed.
+- Rollout percentages and automatic linking remain disabled.
+
+### Exit
+
+- No reachable primary entry point lands users on legacy ask without an
+  explicit product fallback message.
+- Containment does not invent identity proof or bypass `PMP-01A-BLK-001`.
+- Release gate remains closed until remaining open risks are also closed.
+
+### PMP-01A.1 completion record
+
+| Field | Result |
+|---|---|
+| Package | PMP-01A.1 Reachable Legacy Ask Surface Containment |
+| Package status | Ready to commit / contained |
+| PMP-01A overall | Still `BLOCKED` (`PMP-01A-BLK-001`) |
+| Release gate | Still `CLOSED` |
+| Verification | `tsc --noEmit` pass; changed-file ESLint clean for containment files |
+| Residual | Direct deep-links to hidden legacy screens still fail closed with product message; web event contract still `NOT_VERIFIABLE` |
+
+PMP-01A.1 may complete without completing PMP-01A. The parent workstream remains
+blocked until verified legacy identity source and remaining open risks close.
 
 ### Blocker metadata
 
