@@ -21,7 +21,7 @@
 | Blocker | `VERIFIED_LEGACY_IDENTITY_SOURCE_MISSING` |
 | Release gate | `CLOSED` |
 | Automatic linking | `DISABLED` |
-| Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` (PMP-01A.3 contract phase) |
+| Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` (PMP-01A.3 `IMPLEMENTATION_READY`) |
 | Web event contract | `NOT_VERIFIABLE` (PMP-01A.2 closed) |
 | Legacy reachable UX | Contained by PMP-01A.1; residual deep-links fail closed |
 | PMP-01B | `NOT_STARTED` |
@@ -127,8 +127,9 @@ NOT_VERIFIABLE model.
 
 ## PMP-01A.3 — Manual Recovery Execution
 
-**Status:** Active — operational contract (state machine locked first)  
-**First work:** State machine, then remaining contract sections; code later  
+**Status:** `IMPLEMENTATION_READY`  
+**Gate passed:** Contract → Edge-Case Review → IMPLEMENTATION_READY  
+**First implementation target after this gate:** Reviewer API  
 **Does not automatically resolve:** `PMP-01A-BLK-001`  
 **Does not enable:** automatic linking, migration, rollout, release gate
 
@@ -388,6 +389,59 @@ Verification:
 
 This matrix answers one question only: which single component is authorized
 to perform each security-sensitive operation.
+
+#### 7. Edge-Case Review (Contract Validation)
+
+**Problem:** Normal akış tanımlı. Güvenlik açısından kritik sıra dışı
+durumların beklenen davranışı henüz kilitlenmemişti.
+
+**Exit for this review:** Every critical scenario has a deterministic,
+fail-closed expected behavior; no new blocker was found.
+
+| # | Scenario | Expected behavior |
+|---|---|---|
+| EC-01 | Two reviewers approve the same case concurrently | Single-winner compare-and-set on case state. Exactly one transition to `APPROVED` succeeds. The losing write fails closed with `conflict_state` / idempotent replay. Both assertion attempts are audited; only the winning quorum pair is used. |
+| EC-02 | Primary assertion is revoked after first approval | Case returns to `READY_FOR_REVIEW` if still before quorum completion, or stays non-approved. Any second approval against a revoked primary assertion is rejected. Link creation is forbidden until a fresh valid quorum exists. |
+| EC-03 | Link create attempted with expired assertion(s) | Recovery Service rejects with `assertion_expired`. Case moves to `EXPIRED` if no valid quorum remains, else remains waiting for valid assertions. No link row is written. |
+| EC-04 | Second reviewer identity equals primary reviewer | Reject with `four_eyes_conflict`. No state advance. Audit records the forbidden attempt. |
+| EC-05 | Audit write fails inside link/decision transaction | Entire transaction rolls back. Case state unchanged. No identity link is created. Failure audited by a best-effort system incident event if separate from the aborted write; business decision remains uncommitted. |
+| EC-06 | Recovery Service restarts mid-flow | Resume by `operation_key` and case state only. Duplicate retries are idempotent: same `operation_key` returns the prior result; never creates a second link for the same pair. |
+| EC-07 | Two open cases for the same legacy identity | Second open case is rejected with `duplicate_open_case` unless the first is terminal. Unique partial constraint: at most one non-terminal case per `legacy_user_id` and per `supabase_user_id`. |
+| EC-08 | Reopen a terminal case | Forbidden. Appeals create a new case with a new `operation_key`. Terminal states never transition back to review states. |
+| EC-09 | Evidence hash changes after first approval | Existing approvals become invalid for quorum. Case returns to `EVIDENCE_PENDING` or `READY_FOR_REVIEW` with reason `evidence_changed`. New assertions required. |
+| EC-10 | APPROVED case expires before link commit | Transition to `EXPIRED`. Link create after expiry fails closed. A new case is required. |
+| EC-11 | Conflicting mapping already linked/revoked in identity table | Link create fails closed with `identity_conflict` or `already_linked` / `revoked_link`. Case terminates `REJECTED` or stays `APPROVED` without link only if policy chooses reject; default: `REJECTED`. |
+| EC-12 | Client submits a self-signed assertion body | Ignored as authority. Only Recovery Service-signed assertions count. Request fails closed with `client_assertion_forbidden`. |
+
+Contract clarifications locked by this review:
+
+1. Quorum evaluation and state transition share one transactional boundary
+   with audit write.
+2. At most one non-terminal recovery case per canonical UUID and per legacy
+   identity reference.
+3. Assertion revoke before quorum invalidates that assertion for all further
+   decisions.
+4. Idempotency key uniqueness is global for recovery operations.
+5. Authority never becomes ambiguous under concurrency: Recovery Service is
+   the sole serializer of case-state mutations.
+
+**Edge-Case Review result:** `PASS` — no new blocker.  
+**Package gate:** `IMPLEMENTATION_READY`.
+
+Implementation order after this gate:
+
+```text
+Reviewer API
+  → Signed Assertion Store
+  → Four-Eyes Workflow enforcement
+  → Recovery Service link/revoke path
+  → Evidence / negative tests
+  → (later) Recovery UI
+```
+
+`IMPLEMENTATION_READY` does not open the release gate, does not resolve
+`PMP-01A-BLK-001`, and does not authorize production linking without the
+later Resolution Review.
 
 ### Execution discipline
 
