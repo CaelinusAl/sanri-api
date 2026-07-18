@@ -115,6 +115,29 @@ drift ve doğrulama maliyeti oluşturur.
 
 ### PMP-01 — Secure Migration
 
+PMP-01, `docs/pmp-01-secure-migration-execution-plan.md` içindeki execution
+planı ile yönetilir. Program governance katmanı `PMP-01.0`’dır; aşağıdaki
+alt başlıklar bağımsız iş paketleridir.
+
+#### PMP-01.0 — Program Governance
+
+PMP-01.0 kod yazmaz. İş paketlerini koordine eder, dependency map’i ve
+Problem–Evidence–Exit kayıtlarını korur, REP girdilerini toplar ve her paket
+için risk, rollback ve MUV etkisini gözden geçirir.
+
+#### PMP-01A–F — Work packages
+
+- **PMP-01A:** Identity Linking Execution
+- **PMP-01B:** Migration Engine
+- **PMP-01C:** Resource Migration
+- **PMP-01D:** Verification Engine
+- **PMP-01E:** Rollback Engine
+- **PMP-01F:** Migration Dashboard
+
+Current execution status: **PMP-01A BLOCKED** —
+`PMP-01A-BLK-001 / VERIFIED_LEGACY_IDENTITY_SOURCE_MISSING`. Bu blocker
+çözülmeden PMP-01B’ye, PMP-01C’ye veya sonraki ürün engine’lerine geçilmez.
+
 Amaç:
 
 - canonical Supabase identity,
@@ -138,6 +161,10 @@ PMP-01 yalnızca migration’ın teknik olarak çalışmasıyla tamamlanmış sa
 Çıkış için migration’ın güvenli, geri alınabilir ve bağımsız kanıtlarla
 doğrulanabilir olması gerekir. Ambiguous ownership, unverified identity,
 consent ihlali veya rollback rehearsal eksikliği blocker’dır.
+
+Migration Engine’in başarılı sonucu tek başına migration tamamlandı anlamına
+gelmez. Verification Engine bağımsız olarak `PASS` üretmeden migration
+tamamlanamaz; `FAIL` sonucu rollback değerlendirmesini zorunlu kılar.
 
 ### PMP-02 — Alpha Cohort
 
