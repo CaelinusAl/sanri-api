@@ -21,7 +21,7 @@
 | Blocker | `VERIFIED_LEGACY_IDENTITY_SOURCE_MISSING` |
 | Release gate | `CLOSED` |
 | Automatic linking | `DISABLED` |
-| Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` |
+| Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` (PMP-01A.3 contract phase) |
 | Web event contract | `NOT_VERIFIABLE` (PMP-01A.2 closed) |
 | Legacy reachable UX | Contained by PMP-01A.1; residual deep-links fail closed |
 | PMP-01B | `NOT_STARTED` |
@@ -127,59 +127,109 @@ NOT_VERIFIABLE model.
 
 ## PMP-01A.3 — Manual Recovery Execution
 
-**Status:** Planned after PMP-01A.2 evidence is recorded  
-**Does not resolve automatically:** `PMP-01A-BLK-001`  
-**Does not enable:** automatic linking, migration, rollout
+**Status:** Active — operational contract definition  
+**First work:** Operational contract (not implementation code)  
+**Does not automatically resolve:** `PMP-01A-BLK-001`  
+**Does not enable:** automatic linking, migration, rollout, release gate
 
 ### Problem
 
-Manual recovery is currently policy-defined but not an operational capability.
-Without executable controls, recovery cannot safely mint audited identity
-decisions.
+Manual recovery politikası tanımlı, ancak operasyonel olarak uygulanamıyor.
+Güvenilir reviewer onayı, imzalı assertion, four-eyes kontrolü ve audit
+zinciri bulunmadığı için verified identity link üretilemez.
 
-### Target flow
+### Evidence required
+
+- Reviewer API çalışıyor.
+- Signed Assertion Store mevcut.
+- Four-eyes onayı zorunlu.
+- Audit kaydı immutable.
+- Recovery UI yalnızca yetkili akışı kullanıyor.
+- Negatif güvenlik testleri geçiyor.
+
+### Exit for PMP-01A.3 package
+
+Manual recovery `OPERATIONAL` sayılır yalnızca şu koşulların tamamı
+sağlandığında:
+
+- Manual recovery tamamen operasyonel.
+- Ad-hoc DB müdahalesi gerekmiyor.
+- Verified identity link yalnızca recovery akışı üzerinden üretilebiliyor.
+- Tüm kararlar audit ediliyor.
+- REP için doğrulanabilir kanıt üretilmiş.
+
+Until then, status remains `POLICY_DEFINED / NOT_OPERATIONAL`. No recovery
+path may create `verified` or `linked` identity states through automation or
+ad-hoc database edits.
+
+### Target operational chain
 
 ```text
 Policy
   → Reviewer API
   → Signed Assertion Store
   → Four-eyes Approval
-  → Audit
+  → Immutable Audit Trail
   → Recovery UI
-  → Operational
+  → Operational Capability
 ```
 
-### Evidence required
+Any missing link keeps the package incomplete.
 
-- Reviewer case create/approve/reject APIs exist.
-- Signed assertion store records policy version, evidence reference, reviewer
-  identity, and expiry.
-- Four-eyes approval is enforced in the same transactional boundary as the
-  recovery decision.
-- Audit is mandatory; missing audit rolls back the decision.
-- Recovery UI never accepts client-controlled legacy identity as authority.
-- Negative tests cover forged/reused approvals, missing second reviewer,
-  expired assertions, and conflict states.
+### Separation: package completion ≠ blocker resolution
 
-### Exit
+Completing PMP-01A.3 does **not** automatically mark PMP-01A as `DONE`.
 
-Manual recovery status changes from
-`POLICY_DEFINED / NOT_OPERATIONAL` to `OPERATIONAL` only when the evidence
-above is produced. Until then, no recovery path may create `verified` or
-`linked` identity states through automation or ad-hoc database edits.
+The open blocker remains:
+
+`PMP-01A-BLK-001 / VERIFIED_LEGACY_IDENTITY_SOURCE_MISSING`
+
+Required sequence:
+
+```text
+PMP-01A.3
+    ↓
+Evidence pack
+    ↓
+Resolution Review (separate decision)
+    ↓
+BLOCKED or UNBLOCKED
+```
+
+Resolution Review asks only:
+
+> Does operational manual recovery now satisfy the blocker resolution
+> criteria?
+
+That decision is not made by the A.3 implementation authors alone. Evidence
+producers and blocker-removal authority remain separated. A.3 may produce
+capability evidence; only Resolution Review may change the blocker state.
+
+### Pre-implementation contract work (current step)
+
+Before writing recovery APIs or UI, lock:
+
+1. Case states and allowed transitions.
+2. Acceptable vs prohibited evidence types (from existing governance).
+3. Assertion schema: policy version, evidence reference hash, reviewer
+   identities, expiry, operation key.
+4. Four-eyes rules: distinct reviewers; no self-approval.
+5. Atomic transaction boundary: decision + assertion + audit together.
+6. Fail-closed negative cases and expected status codes.
+7. Explicit non-goals: no automatic linking, no email/device matching, no
+   client-provided `legacy_user_id` authority.
 
 ### Execution discipline
 
 Every subsequent package is reviewed with the same questions:
 
-1. Problem nedir?
-2. Kanıt nedir?
-3. Exit nedir?
-4. Blocker var mı?
-5. Release gate etkileniyor mu?
+1. Problem net ve gerçek mi?
+2. Evidence objektif ve doğrulanabilir mi?
+3. Exit kriterleri tamamen karşılandı mı?
+4. Blocker doğru yönetiliyor mu?
+5. Release Gate durumu değişiyor mu?
 
-If any answer is missing or non-objective, the package remains `BLOCKED`,
-`NOT_STARTED`, or `VALUE_UNPROVEN`.
+If any answer is negative, the package status does not advance.
 
 ### Blocker metadata
 

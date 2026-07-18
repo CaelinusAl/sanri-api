@@ -143,10 +143,12 @@ Sıradaki çalışma blocker’ı zorla aşmak değildir. Öncelik:
 1. **PMP-01A.1** — Reachable Legacy Ask Surface Containment — completed.
 2. **PMP-01A.2** — Web Event Contract Audit — closed as `NOT_VERIFIABLE`
    (inspectable source absent; no trust assumed).
-3. **PMP-01A.3** — Manual Recovery Execution — next planned package;
-   policy → reviewer API → signed assertion store → four-eyes → audit →
-   UI → operational.
-4. Ancak kanıtlardan sonra `PMP-01A-BLK-001` resolution review.
+3. **PMP-01A.3** — Manual Recovery Execution — active contract phase first
+   (not code-first); then policy → reviewer API → signed assertion store →
+   four-eyes → immutable audit → UI → operational.
+4. A.3 tamamlanması PMP-01A’yı otomatik `DONE` yapmaz. Evidence pack sonrası
+   ayrı **Resolution Review** `PMP-01A-BLK-001` için `BLOCKED` veya
+   `UNBLOCKED` kararını verir.
 
 Bu riskler kapanmadan hiçbir release gate açılmaz. `BLOCKED` ise blocker
 çözülür; `READY` ise uygulanır; `DONE` demeden kanıt istenir; `RELEASE`
