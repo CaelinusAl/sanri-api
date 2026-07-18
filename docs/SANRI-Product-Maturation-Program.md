@@ -138,6 +138,17 @@ Current execution status: **PMP-01A BLOCKED** —
 `PMP-01A-BLK-001 / VERIFIED_LEGACY_IDENTITY_SOURCE_MISSING`. Bu blocker
 çözülmeden PMP-01B’ye, PMP-01C’ye veya sonraki ürün engine’lerine geçilmez.
 
+Sıradaki çalışma blocker’ı zorla aşmak değildir. Öncelik:
+
+1. açık REP risklerini kapatmak (`mobile-default`/legacy ask UX, web event
+   consumer doğrulaması),
+2. manual-recovery-only stratejisinin operasyonel olarak uygulanabilirliğini
+   kanıtlamak,
+3. ancak ardından verified legacy identity source seçeneklerini yeniden
+   değerlendirmek.
+
+Bu riskler kapanmadan hiçbir release gate açılmaz.
+
 Amaç:
 
 - canonical Supabase identity,

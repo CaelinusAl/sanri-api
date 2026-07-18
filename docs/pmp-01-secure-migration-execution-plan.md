@@ -13,6 +13,19 @@
 **Blocker:** `VERIFIED_LEGACY_IDENTITY_SOURCE_MISSING`  
 **Security impact:** Cross-user association and account takeover risk
 
+### Official status snapshot
+
+| Item | Status |
+|---|---|
+| PMP-01A | `BLOCKED` |
+| Blocker | `VERIFIED_LEGACY_IDENTITY_SOURCE_MISSING` |
+| Release gate | `CLOSED` |
+| Automatic linking | `DISABLED` |
+| Manual recovery | `POLICY_DEFINED / NOT_OPERATIONAL` |
+| Web event contract | `NOT_VERIFIABLE` |
+| Legacy reachable UX | `UNSAFE_FOR_RELEASE` |
+| PMP-01B | `NOT_STARTED` |
+
 ### Blocker metadata
 
 | Field | Value |
@@ -127,18 +140,108 @@ This is a remaining verification gap, not evidence that web usage is safe.
 
 These are integration and UX risks. They do not block committing the
 containment change, but they must remain open in REP and be resolved before
-release or rollout:
+any release gate opens:
 
 1. **Mobile lint baseline** — Full mobile lint still reports pre-existing
    errors/warnings unrelated to the containment files. Tracked separately;
    must not grow with new changes.
-2. **Web event consumer unverified** — The inspected web checkout has no
-   source tree for event ingestion verification. Web must be audited against
-   the new `/events/log` contract before production.
-3. **Legacy `mobile-default` UX breakage** — Some legacy mobile screens still
-   send shared session IDs to fail-closed or non-event routes. Contained
-   routes reject unsafe identity, but user-visible breakage must be verified
-   and repaired before release.
+2. **Web event consumer unverified** — See assessment below. Release gate
+   remains closed until the web source is available and audited.
+3. **Legacy shared-session UX breakage** — See impact matrix below. Release
+   gate remains closed until affected surfaces are migrated, disabled, or
+   given a verified user-facing fallback.
+
+### Risk assessment — legacy shared-session UX
+
+Shared session IDs are not an event-ingestion-only problem. Multiple mobile
+surfaces still call fail-closed legacy chat (`/bilinc-alani/ask`) with
+shared or static `session_id` values.
+
+| Surface | Session signal | Endpoint | User impact | Status |
+|---|---|---|---|---|
+| `sanri_flow.tsx` | `mobile-default` | `/bilinc-alani/ask` | Chat fails with canonical-identity required | REACHABLE via gates/city/my_area |
+| `observer.tsx` | `mobile-default` | `/bilinc-alani/ask` | Same failure | Hidden from tab bar (`href: null`) |
+| `pattern.tsx` | `mobile-default` | `/bilinc-alani/ask` | Same failure | Hidden from tab bar |
+| `symbol.tsx` | `mobile-default` | `/bilinc-alani/ask` | Same failure | Hidden from tab bar |
+| `lib/api.ts` `askSanri` | default `"mobile"` | `/bilinc-alani/ask` | Same failure for callers | Shared helper |
+| `daily_stream.tsx` | `daily-stream-mobile` | `/bilinc-alani/ask` | Same failure | Active surface |
+| `kod_ders.tsx` | `mobile-kod-okuma` | `/bilinc-alani/ask` | Same failure | Active surface |
+| `rituals/live.tsx` | `"mobile"` | `/bilinc-alani/ask` | Same failure | Active surface |
+| `my_area`, `world_events`, `okuma_detail`, `matrix_mini`, `global-signal` | various | `/bilinc-alani/ask` | Same failure | Active surfaces |
+| Event analytics (`LogEvent` / `analytics`) | UUID + Supabase JWT | `/events/log` | Contained | CLOSED for this risk |
+
+Verdict: changing only the string `"mobile-default"` does not restore these
+screens. The trust boundary is correct — legacy chat is fail-closed — but
+product surfaces still route users into that dead end. Before any release
+gate opens, every reachable legacy ask surface must either:
+
+- migrate to authenticated V1 chat, or
+- be removed/hidden from navigation, or
+- show an explicit, non-spoofable “canonical auth required” product state.
+
+### Risk assessment — web event consumer
+
+Inspected checkout `asksanri-frontend` currently contains:
+
+- `dist/`, `dev-dist/`, `.vite/`, `node_modules/`, `public/`, `.env`
+- no `package.json`
+- no application `src/` tree
+
+Search for `events/log`, `X-User-Id`, and `mobile-default` in non-build
+paths returned no matches. This is **not** evidence that web is safe; it is
+evidence that web source of truth is not present for audit.
+
+Verdict: web event consumer status = `NOT VERIFIABLE`. Release gate remains
+closed until an inspectable web source tree is restored and proven to:
+
+- omit client-controlled `user_id` / `X-User-Id`,
+- send Supabase JWT for authenticated event ingestion,
+- never use shared/default session identifiers as identity.
+
+### Manual-recovery-only executability assessment
+
+Governance document:
+
+- `docs/sprint-3.2b-manual-recovery-governance.md`
+
+What exists:
+
+- policy for acceptable/prohibited evidence,
+- four-eyes approval rule,
+- idempotency and revocation intent,
+- dry-run identity link contracts (`app/application/identity_linking.py`),
+- empty identity-link / migration-audit schema models.
+
+What does **not** exist in executable code:
+
+- reviewer case create/approve/reject APIs,
+- signed reviewer assertion store with policy version, evidence reference,
+  reviewer identity, and expiry,
+- four-eyes enforcement in a transaction,
+- user-visible recovery confirmation UI,
+- server channel that can independently verify a legacy session,
+- operational audit trail for recovery decisions.
+
+Verdict: **manual-recovery-only is the correct strategy, but it is not yet
+operationally executable.** Choosing this strategy is a security decision,
+not a completed capability. Until the execution gap above is closed,
+recovery must remain a documented exception path that cannot mint
+`verified`/`linked` identity states through automation.
+
+This assessment does **not** resolve `PMP-01A-BLK-001`. It confirms that
+forcing automatic linking would recreate unsafe trust, and that the safer
+path is manual-recovery-only once it becomes executable.
+
+### Release gate rule for these risks
+
+No Alpha, Beta, RC, or production release gate may open while any of the
+following remain true:
+
+- reachable mobile surfaces still call fail-closed legacy ask without a
+  verified product fallback,
+- web event consumer is `NOT VERIFIABLE`,
+- manual recovery is policy-only and cannot produce audited recovery
+  decisions without ad-hoc database edits.
 
 ### REP decision
 
