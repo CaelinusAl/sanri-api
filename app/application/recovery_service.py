@@ -1,4 +1,4 @@
-"""Recovery mutations with four-eyes (A.3.3), links (A.3.4), durable cases (A.3.6)."""
+"""Recovery mutations with four-eyes (A.3.3), links (A.3.4), durable cases/audit (A.3.6/A.3.7)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,11 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from app.application.assertion_store import DurableSignedAssertionStore
+from app.application.recovery_audit_store import (
+    DurableAuditWriter,
+    entity_ref_from_detail,
+    sanitize_audit_detail,
+)
 from app.application.recovery_link_store import DurableRecoveryLinkStore
 from app.domain.assertion import AssertionDecision, SignedAssertion
 from app.domain.recovery import (
@@ -46,6 +51,7 @@ class AuditRecord:
     operation_key: str
     created_at: datetime
     detail: dict
+    entity_ref: str | None = None
 
 
 @dataclass
@@ -185,14 +191,13 @@ class RecoveryService:
     def __init__(
         self,
         store: RecoveryStore,
-        audit: AuditWriter,
+        audit: AuditWriter | None = None,
         *,
         assertion_store: DurableSignedAssertionStore | None = None,
         link_store: DurableRecoveryLinkStore | None = None,
         db_session: Session | None = None,
     ):
         self.store = store
-        self.audit = audit
         self.assertion_store = assertion_store
         self.link_store = link_store
         self.db_session = db_session if db_session is not None else (
@@ -200,6 +205,24 @@ class RecoveryService:
                 link_store.session if link_store is not None else None
             )
         )
+        # Runtime path: durable audit when a DB session exists.
+        # InMemoryAuditWriter is only for explicitly injected test/legacy harnesses.
+        if audit is not None:
+            self.audit = audit
+        elif self.db_session is not None:
+            try:
+                self.audit = DurableAuditWriter(self.db_session)
+            except Exception as exc:
+                raise RecoveryError(
+                    "audit_unavailable",
+                    "Durable audit ledger unavailable; refusing recovery mutations",
+                ) from exc
+        else:
+            raise RecoveryError(
+                "audit_unavailable",
+                "Durable audit requires a database session; "
+                "inject InMemoryAuditWriter only for explicit test harnesses",
+            )
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -327,6 +350,7 @@ class RecoveryService:
         operation_key: str,
         detail: dict | None = None,
     ) -> None:
+        safe_detail = sanitize_audit_detail(detail)
         self.audit.write(
             AuditRecord(
                 audit_id=uuid4(),
@@ -337,7 +361,8 @@ class RecoveryService:
                 to_state=str(to_state) if to_state is not None else None,
                 operation_key=operation_key,
                 created_at=self._now(),
-                detail=detail or {},
+                detail=safe_detail,
+                entity_ref=entity_ref_from_detail(safe_detail),
             )
         )
 

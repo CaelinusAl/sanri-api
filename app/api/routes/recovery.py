@@ -18,7 +18,6 @@ from app.application.recovery_link_store import DurableRecoveryLinkStore
 from app.application.recovery_service import (
     RecoveryCaseRecord,
     RecoveryService,
-    default_recovery_service,
 )
 from app.core.config import Settings, get_settings
 from app.core.security import get_current_recovery_reviewer
@@ -42,14 +41,16 @@ from app.schemas.recovery import (
 
 router = APIRouter(prefix="/v1/recovery", tags=["v1-recovery-reviewer"])
 
-# Audit remains process-local for reviewer console evidence; case ledger is durable (A.3.6).
-_audit = default_recovery_service.audit
-
 
 def get_recovery_service(
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RecoveryService:
+    """Runtime wiring: durable case/assertion/link/audit stores on the request session.
+
+    DurableAuditWriter is selected by RecoveryService when db_session is present
+    and no audit writer is explicitly injected.
+    """
     case_store = DurableRecoveryCaseStore(db)
     assertion_store = DurableSignedAssertionStore(
         db,
@@ -58,7 +59,6 @@ def get_recovery_service(
     link_store = DurableRecoveryLinkStore(db)
     return RecoveryService(
         case_store,
-        _audit,
         assertion_store=assertion_store,
         link_store=link_store,
         db_session=db,
