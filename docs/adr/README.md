@@ -43,3 +43,12 @@ Verified legacy identity source and Stream C entry decisions are frozen as
 These docs do **not** open the release gate, enable automatic linking, or
 resolve `PMP-01A-BLK-001`. Implementation remains blocked until
 `ENTRY_GATE_ACCEPTED`.
+
+### Council Review completion (design only — additive)
+
+Three Council-missing fields were filed without amending freeze decisions:
+
+- [`../blockers/PMP-01A-BLK-001-council-review-completion-pack.md`](../blockers/PMP-01A-BLK-001-council-review-completion-pack.md)
+- VLIS evidence/trust · Migration Bridge · Production stress / load acceptance
+
+`ENTRY_GATE` remains `PENDING`; Stream C must not start.

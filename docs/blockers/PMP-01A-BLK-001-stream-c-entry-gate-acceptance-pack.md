@@ -525,8 +525,10 @@ Abstain counts as non-accept ⇒ pack remains `PENDING`.
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-07-19 | Initial Entry Gate Acceptance Pack — `ENTRY_GATE_PENDING` |
+| 1.0a | 2026-07-19 | Non-normative pointer: Council gap docs filed under `PMP-01A-BLK-001-council-review-completion-pack.md` — **does not** change D1–D10, I1–I12, or gate status |
 
-**Next action:** Obtain §15 signatures. On full ACCEPT, flip status to
+**Next action:** Obtain §15 signatures (and Council completion artifact
+signatures as applicable). On full ACCEPT, flip status to
 `ENTRY_GATE_ACCEPTED` via recorded amendment (no code). Only then open Stream C
 implementation planning/PRs.
 

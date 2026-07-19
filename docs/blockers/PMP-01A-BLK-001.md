@@ -7,12 +7,14 @@
 **Status:** `OPEN`  
 **Program status:** PMP-01A = `BLOCKED` · Release gate = `CLOSED`  
 **Owner:** PMP-01 Program  
-**Last updated:** 2026-07-18  
+**Last updated:** 2026-07-19  
 **Stream A design:** `docs/blockers/PMP-01A-BLK-001-verified-legacy-identity-source-design.md` (`DESIGN_DRAFT`)  
 **Stream B design:** `docs/blockers/PMP-01A-BLK-001-stream-b-architecture-integration.md` (`DESIGN_DRAFT`)  
 **Stream B2 review:** `docs/blockers/PMP-01A-BLK-001-stream-b2-containment-abuse-review.md` (`REVIEW_COMPLETE`)  
 **Stream C entry gate:** `docs/blockers/PMP-01A-BLK-001-stream-c-entry-gate-acceptance-pack.md` (`ENTRY_GATE_PENDING`)  
-**L-06 resolution:** `docs/blockers/PMP-01A-BLK-001-l06-resolution-decision.md` (`DECISION_DRAFT` — Option C+B recommended)
+**L-06 resolution:** `docs/blockers/PMP-01A-BLK-001-l06-resolution-decision.md` (`DECISION_DRAFT` — Option C+B recommended)  
+**Governance freeze:** `55fc4aa` / `pmp01a39-governance-freeze`  
+**Council Review completion:** `docs/blockers/PMP-01A-BLK-001-council-review-completion-pack.md` (`COUNCIL_GAPS_FILED`)
 
 ---
 
@@ -172,6 +174,20 @@ four-eyes → link → durable audit).
 **Exit artifact:** Council decision `RESOLVED` recorded; only then reconsider
 release-gate / PMP-01B readiness.
 
+### Council Review gap closure (design only — 2026-07-19)
+
+Council Review identified three fields incomplete for signature. Filed under
+`PMP-01A-BLK-001-council-review-completion-pack.md` **without** changing freeze
+decisions or flipping `ENTRY_GATE`:
+
+| Field | Artifact | Status |
+|---|---|---|
+| VLIS evidence combinations & trust levels | `PMP-01A-BLK-001-council-vlis-evidence-trust-decision.md` | `DECISION_DRAFT` |
+| Migration Bridge (JWT; no `X-User-Id` authz) | `PMP-01A-BLK-001-migration-bridge-design.md` | `DESIGN_DRAFT` |
+| Production stress / load acceptance | `PMP-01A-BLK-001-production-stress-load-acceptance.md` | `ACCEPTANCE_DRAFT` |
+
+These docs do **not** start Stream C, open the release gate, or resolve BLK-001.
+
 ---
 
 ## Explicit non-goals (do not work on these yet)
@@ -192,6 +208,9 @@ release-gate / PMP-01B readiness.
 - [x] Stream B2 containment / abuse-case review filed (`REVIEW_COMPLETE`)  
 - [x] Stream C Entry Gate Acceptance Pack filed (`ENTRY_GATE_PENDING`)  
 - [x] L-06 resolution decision filed (`DECISION_DRAFT` — recommend Option C+B)  
+- [x] Governance freeze tagged (`55fc4aa` / `pmp01a39-governance-freeze`)  
+- [x] Council Review gap docs filed (VLIS trust + Migration Bridge + Load Acceptance)  
+- [ ] Council gap docs signed (Identity / Security / Ops as applicable)  
 - [ ] L-06 decision + entry gate signed by named authorities (no false ACCEPT)  
 - [ ] Entry gate `ENTRY_GATE_ACCEPTED`  
 - [ ] L-06.1–L-06.8 contained + `L06-T*` green before OPERATIONAL  
@@ -212,10 +231,15 @@ release-gate / PMP-01B readiness.
 | Stream B2 containment / abuse review | `docs/blockers/PMP-01A-BLK-001-stream-b2-containment-abuse-review.md` |
 | Stream C entry gate acceptance pack | `docs/blockers/PMP-01A-BLK-001-stream-c-entry-gate-acceptance-pack.md` |
 | L-06 resolution decision | `docs/blockers/PMP-01A-BLK-001-l06-resolution-decision.md` |
+| Council Review completion pack | `docs/blockers/PMP-01A-BLK-001-council-review-completion-pack.md` |
+| VLIS evidence/trust Council decision | `docs/blockers/PMP-01A-BLK-001-council-vlis-evidence-trust-decision.md` |
+| Migration Bridge design | `docs/blockers/PMP-01A-BLK-001-migration-bridge-design.md` |
+| Production stress / load acceptance | `docs/blockers/PMP-01A-BLK-001-production-stress-load-acceptance.md` |
 | REP-001 | `releases/REP-001/REP.md` |
 | Operations Manual | `docs/operations/OPERATIONS-MANUAL.md` |
 | PMP execution plan (blocker section) | `docs/pmp-01-secure-migration-execution-plan.md` |
-| Freeze tip | `pmp01a37-complete` / `f7cc6b3` |
+| Engineering freeze tip | `pmp01a37-complete` / `f7cc6b3` |
+| Governance freeze | `pmp01a39-governance-freeze` / `55fc4aa` |
 
 ---
 
