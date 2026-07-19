@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.prompts.system_base import build_system_prompt, SANRI_PROMPT_VERSION
+from app.services.prompt_builder import AURA_PROMPT_VERSION, build_prompt
 from app.models.event import Event
 from app.services.ai_service import get_client, generate_sanri_response
 from app.services.theme_classifier import classify_theme, theme_label
@@ -21,6 +21,7 @@ from app.services.intent_router import route_message
 from app.services.prompt_assets import memory_rules_prompt, mode_prompt, safety_prompt
 
 MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
+SANRI_PROMPT_VERSION = AURA_PROMPT_VERSION
 
 # Gate 33 — derinleşme alanı. Aynı tema bir cihaz/session içinde bu kadar kez
 # döndüğünde "birlikte derinleş" daveti çıkar (satış değil, içe bakış daveti).
@@ -190,6 +191,7 @@ def run_sanri(
     gate_name: str = None,
     conversation_context: list[dict] | None = None,
     requested_mode: str | None = None,
+    legacy_memory_write_enabled: bool | None = None,
 ) -> dict:
     is_premium = check_is_premium(db, user_id)
     daily_count = get_daily_message_count(db, user_id)
@@ -259,8 +261,9 @@ def run_sanri(
             f"{system_context}\n"
         )
 
+    aura_mode = "reflection" if intent_route.requested_mode in {"think", "explore"} else "aura"
     system_prompt = (
-        build_system_prompt("user")
+        build_prompt(mode=aura_mode, language=lang, memories=[])
         + "\n\nAURA PRIMARY RULE:\n"
         + "AURA kullanıcının istediği sonucu geciktirmez. Önce üretir. Sonra birlikte derinleşir.\n"
         + "\nINTENT ROUTER:\n"
@@ -388,7 +391,16 @@ Now respond:
             "closing": None,
         }
 
-    save_memory(db, user_id, user_message, text_resp)
+    # Legacy memory writes are frozen during Sprint 3. Existing rows remain
+    # readable for migration, but new long-term memory must go through the V1
+    # consent contract.
+    memory_write_enabled = (
+        legacy_memory_write_enabled
+        if legacy_memory_write_enabled is not None
+        else os.getenv("LEGACY_MEMORY_WRITE_ENABLED", "false").casefold() in {"1", "true", "yes"}
+    )
+    if memory_write_enabled:
+        save_memory(db, user_id, user_message, text_resp)
     save_profile(db, user_id, runtime_profile)
 
     return {
