@@ -90,7 +90,10 @@ def create_memory(
     confidence: float = 1.0,
     conversation_id: str | None = None,
     project_id: str | None = None,
+    approval_status: str = "proposed",
 ) -> V1Memory:
+    if approval_status not in {"proposed", "approved", "rejected"}:
+        raise ValueError("Invalid memory approval status")
     row = V1Memory(
         user_id=UUID(user_id),
         content=content,
@@ -98,7 +101,7 @@ def create_memory(
         source=source,
         category=category,
         confidence=confidence,
-        approval_status="approved",
+        approval_status=approval_status,
         conversation_id=UUID(conversation_id) if conversation_id else None,
         project_id=UUID(project_id) if project_id else None,
     )
