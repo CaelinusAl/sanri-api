@@ -1,5 +1,7 @@
-"""Sprint 3 Wave B.1 — /v1/memories route-level auth, ownership, consent."""
+"""Sprint 3 Wave B — /v1/memories route-level auth, ownership, consent, soft-delete."""
 
+import inspect
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
@@ -9,6 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api.routes import memories as memories_route
 from app.core.config import Settings, get_settings
 from app.core.security import get_current_user_id
 from app.db import Base, get_db
@@ -246,3 +249,64 @@ def test_jwt_subject_is_the_only_owner_scope(client, db_session, settings):
     assert response.json() == []
     assert get_current_user_id.__name__ == "get_current_user_id"
     assert settings.supabase_jwt_secret == JWT_SECRET
+
+
+def test_delete_soft_deletes_owner_memory(client, db_session):
+    row = create_memory(
+        db_session, OWNER_ID, "silinecek kitap notu", "explicit", approval_status="approved"
+    )
+
+    deleted = client.delete(f"/v1/memories/{row.id}", headers=_auth(OWNER_ID))
+    assert deleted.status_code == 204
+
+    db_session.expire_all()
+    persisted = db_session.get(V1Memory, row.id)
+    assert persisted is not None
+    assert persisted.deleted_at is not None
+    assert isinstance(persisted.deleted_at, datetime)
+
+    listed = client.get("/v1/memories", headers=_auth(OWNER_ID))
+    assert listed.status_code == 200
+    assert all(item["id"] != str(row.id) for item in listed.json())
+
+    searched = client.get(
+        "/v1/memories/search",
+        headers=_auth(OWNER_ID),
+        params={"q": "silinecek"},
+    )
+    assert searched.status_code == 200
+    assert all(item["id"] != str(row.id) for item in searched.json())
+
+    hits = retrieve_relevant_memories(db_session, OWNER_ID, "silinecek kitap")
+    assert all(str(hit.id) != str(row.id) for hit in hits)
+
+
+def test_delete_is_owner_scoped_and_repeat_is_404(client, db_session):
+    row = create_memory(
+        db_session, OWNER_ID, "owner only delete", "explicit", approval_status="approved"
+    )
+
+    foreign = client.delete(f"/v1/memories/{row.id}", headers=_auth(OTHER_ID))
+    assert foreign.status_code == 404
+    assert foreign.json()["error"]["code"] == "memory_not_found"
+    db_session.refresh(row)
+    assert row.deleted_at is None
+
+    first = client.delete(f"/v1/memories/{row.id}", headers=_auth(OWNER_ID))
+    assert first.status_code == 204
+    second = client.delete(f"/v1/memories/{row.id}", headers=_auth(OWNER_ID))
+    assert second.status_code == 404
+    assert second.json()["error"]["code"] == "memory_not_found"
+
+    db_session.expire_all()
+    assert db_session.get(V1Memory, row.id) is not None
+
+
+def test_v1_memory_delete_route_has_no_hard_delete_sql():
+    source = inspect.getsource(memories_route.delete_memory)
+    module_source = inspect.getsource(memories_route)
+    assert "deleted_at" in source
+    assert "delete(V1Memory)" not in module_source
+    assert "from sqlalchemy import delete" not in module_source
+    # Live rows only; already soft-deleted memories are not-found.
+    assert "deleted_at.is_(None)" in source

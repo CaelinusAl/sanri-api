@@ -1,7 +1,8 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user_id
@@ -83,9 +84,16 @@ def search_memories(
 
 @router.delete("/{memory_id}", status_code=204)
 def delete_memory(memory_id: UUID, user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
-    result = db.execute(delete(V1Memory).where(V1Memory.id == memory_id, V1Memory.user_id == UUID(user_id)))
-    if result.rowcount == 0:
+    row = db.scalar(
+        select(V1Memory).where(
+            V1Memory.id == memory_id,
+            V1Memory.user_id == UUID(user_id),
+            V1Memory.deleted_at.is_(None),
+        )
+    )
+    if row is None:
         raise HTTPException(status_code=404, detail={"code": "memory_not_found", "message": "Memory not found"})
+    row.deleted_at = datetime.now(timezone.utc)
     db.commit()
 
 
