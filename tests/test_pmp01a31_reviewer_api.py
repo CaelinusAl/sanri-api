@@ -129,6 +129,50 @@ def test_reviewer_identity_comes_only_from_jwt(settings):
     assert get_current_recovery_reviewer(claims, settings) == reviewer
 
 
+def test_app_metadata_reviewer_role_is_accepted(settings):
+    reviewer = uuid4()
+    claims = {
+        "sub": str(reviewer),
+        "app_metadata": {"role": REVIEWER_ROLE},
+        "user_metadata": {"role": "user"},
+    }
+    assert get_current_recovery_reviewer(claims, settings) == reviewer
+
+
+def test_user_metadata_reviewer_role_alone_is_rejected(settings):
+    from fastapi import HTTPException
+
+    claims = {
+        "sub": str(uuid4()),
+        "user_metadata": {"role": REVIEWER_ROLE},
+    }
+    with pytest.raises(HTTPException) as exc_info:
+        get_current_recovery_reviewer(claims, settings)
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == "reviewer_role_required"
+
+
+def test_ordinary_jwt_user_id_ignores_metadata_roles(settings):
+    """Ordinary auth depends on sub only; role metadata must not affect identity."""
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    from app.core.security import get_current_user_id
+
+    user_id = str(uuid4())
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "aud": "authenticated",
+            "user_metadata": {"role": REVIEWER_ROLE},
+            "app_metadata": {},
+        },
+        JWT_SECRET,
+        algorithm="HS256",
+    )
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+    assert get_current_user_id(credentials, settings) == user_id
+
+
 def test_create_case_idempotent_and_no_rollout_side_effects(client, service):
     subject = str(uuid4())
     body = {

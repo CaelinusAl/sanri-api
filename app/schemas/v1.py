@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-Mode = Literal["aura", "reflection"]
+Mode = Literal["aura", "reflection", "think", "create", "projects", "explore"]
 Intent = Literal["build", "reflect", "heal", "learn", "create"]
 WorkMode = Literal["deep_work", "reflection", "brainstorming"]
 
@@ -62,6 +62,15 @@ class ConversationResponse(ConversationSummary):
     messages: list[MessageResponse]
 
 
+class SessionCloseRequest(BaseModel):
+    what_changed: str = Field(default="", max_length=2000)
+    decisions: list[str] = Field(default_factory=list, max_length=20)
+    memory_suggestions: list[dict] = Field(default_factory=list, max_length=20)
+    project_updates: list[dict] = Field(default_factory=list, max_length=20)
+    open_questions: list[str] = Field(default_factory=list, max_length=20)
+    next_smallest_action: str | None = Field(default=None, max_length=1000)
+
+
 class MemoryCreate(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     memory_type: str = Field(default="explicit", max_length=50)
@@ -77,6 +86,8 @@ class MemoryUpdate(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     category: str | None = Field(default=None, max_length=100)
     confidence: float | None = Field(default=None, ge=0, le=1)
+    approval_status: Literal["proposed", "approved", "rejected"] | None = None
+    consent: bool = False
 
 
 class MemoryResponse(BaseModel):

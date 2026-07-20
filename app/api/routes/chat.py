@@ -8,18 +8,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.core.logging import log_ai_metrics
+from app.core.logging import log_ai_metrics, log_migration_metric
 from app.core.security import get_current_user_id
 from app.db import get_db
+from app.application.aura_chat_service import AuraChatService
 from app.models.v1 import V1Conversation, V1Message
 from app.schemas.v1 import ChatRequest
-from app.services.aura_engine import AuraEngine
 from app.services.aura_reports import extract_aura_reports
 from app.services.aura_reports import extract_reflection_after_action
 from app.services.consciousness_layer import ConsciousnessContext
 from app.services.memory_suggestions import extract_memory_suggestions
 from app.services.openai_provider import OpenAIProvider
 from app.services.rate_limit import enforce_rate_limit
+from app.services.feature_flags import v1_chat_available
 
 
 router = APIRouter(prefix="/v1", tags=["v1-chat"])
@@ -36,8 +37,14 @@ def chat(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
+    if not v1_chat_available(settings, user_id):
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "v1_chat_not_enabled", "message": "V1 chat traffic is not enabled for this rollout"},
+        )
     enforce_rate_limit(user_id, settings.rate_limit_per_minute)
     owner_id = UUID(user_id)
+    chat_service = AuraChatService()
     daily_tokens = db.scalar(
         select(func.coalesce(func.sum(func.coalesce(V1Message.input_tokens, 0) + func.coalesce(V1Message.output_tokens, 0)), 0))
         .where(V1Message.user_id == owner_id, func.date(V1Message.created_at) == func.current_date())
@@ -65,6 +72,14 @@ def chat(
     if payload.session_goal and not conversation.session_goal:
         conversation.session_goal = payload.session_goal
 
+    intent_route = chat_service.resolve_route(
+        payload.message,
+        requested_mode=payload.mode,
+        active_project_id=str(conversation.project_id) if conversation.project_id else None,
+    )
+    conversation.active_mode = intent_route.requested_mode
+    conversation.detected_intent = intent_route.detected_intent
+
     history = db.scalars(
         select(V1Message)
         .where(V1Message.conversation_id == conversation.id)
@@ -77,10 +92,10 @@ def chat(
 
     messages = [{"role": item.role, "content": item.content} for item in history]
     messages.append({"role": "user", "content": payload.message})
-    system = AuraEngine().build_system_prompt(
+    system = chat_service.build_system_prompt(
         db,
         user_id=user_id,
-        mode=payload.mode,
+        mode=intent_route.requested_mode,
         language=payload.language,
         memory_consent=payload.memory_consent,
         user_message=payload.message,
@@ -98,12 +113,15 @@ def chat(
     async def generate():
         answer_parts: list[str] = []
         usage = None
+        first_token_at: float | None = None
         try:
             yield _sse("conversation", {"conversation_id": str(conversation.id)})
-            async for delta, final_usage in provider.stream(system=system, messages=messages):
+            async for delta, final_usage in chat_service.stream(provider, system=system, messages=messages):
                 if final_usage is not None:
                     usage = final_usage
                 if delta:
+                    if first_token_at is None:
+                        first_token_at = time.perf_counter()
                     answer_parts.append(delta)
             answer, state_update, progress_report = extract_aura_reports("".join(answer_parts))
             answer, memory_suggestions = extract_memory_suggestions(answer)
@@ -139,11 +157,32 @@ def chat(
                 output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
                 estimated_cost_usd=getattr(usage, "estimated_cost_usd", 0.0) if usage else 0.0,
             )
+            log_migration_metric(
+                "v1_chat_success",
+                route="v1",
+                mode=payload.mode,
+                intent=payload.intent,
+                status="success",
+                latency_ms=elapsed,
+                ttft_ms=int((first_token_at - started) * 1000) if first_token_at else None,
+                memory_retrieval_count=chat_service.memory_retrieval_count,
+                fallback=False,
+            )
             if memory_suggestions:
                 yield _sse("memory_suggestions", {"items": memory_suggestions})
             yield _sse("done", {"message_id": str(response_message.id)})
         except Exception:
             db.rollback()
+            log_migration_metric(
+                "v1_chat_error",
+                route="v1",
+                mode=payload.mode,
+                intent=payload.intent,
+                status="error",
+                provider_error=True,
+                streaming_interruption=bool(answer_parts),
+                fallback=False,
+            )
             yield _sse("error", {"code": "provider_error", "message": "AURA is temporarily unavailable"})
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

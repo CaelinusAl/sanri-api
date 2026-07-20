@@ -15,3 +15,27 @@ def log_ai_metrics(*, user_id: str, provider: str, model: str, latency_ms: int, 
         output_tokens,
         estimated_cost_usd,
     )
+
+
+def log_migration_metric(event: str, **fields: object) -> None:
+    """Emit allowlisted, content-free migration telemetry."""
+    safe_fields = {
+        key: value
+        for key, value in fields.items()
+        if key
+        in {
+            "route",
+            "mode",
+            "intent",
+            "status",
+            "latency_ms",
+            "ttft_ms",
+            "provider_error",
+            "streaming_interruption",
+            "memory_retrieval_count",
+            "session_close_success",
+            "fallback",
+            "shadow",
+        }
+    }
+    logger.info("migration_metric event=%s fields=%s", event, safe_fields)

@@ -11,6 +11,9 @@ class AuraEngine:
 
     prompt_version = AURA_PROMPT_VERSION
 
+    def __init__(self):
+        self.last_retrieval_count = 0
+
     def build_system_prompt(
         self,
         db: Session,
@@ -33,6 +36,7 @@ class AuraEngine:
             if memory_consent
             else []
         )
+        self.last_retrieval_count = len(memory_rows)
         memories = [row.content for row in memory_rows]
         prompt = build_prompt(mode=mode, language=language, memories=memories)
         if consciousness:

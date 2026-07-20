@@ -68,10 +68,17 @@ def get_current_user_claims(
 
 
 def _extract_roles(claims: dict) -> set[str]:
+    """Collect privileged roles from trusted JWT claim sources only.
+
+    Trusted sources:
+    - top-level token claims (existing contract: ``role`` / ``roles``)
+    - ``app_metadata`` (admin-controlled)
+
+    ``user_metadata`` is intentionally ignored — clients can mutate it.
+    """
     roles: set[str] = set()
     app_metadata = claims.get("app_metadata") or {}
-    user_metadata = claims.get("user_metadata") or {}
-    for source in (claims, app_metadata, user_metadata):
+    for source in (claims, app_metadata):
         if not isinstance(source, dict):
             continue
         role = source.get("role")
@@ -87,7 +94,7 @@ def get_current_recovery_reviewer(
     claims: Annotated[dict, Depends(get_current_user_claims)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UUID:
-    """Reviewer identity is derived only from verified JWT + role claims."""
+    """Reviewer identity is derived only from verified JWT + trusted role claims."""
     roles = _extract_roles(claims)
     if settings.recovery_reviewer_role not in roles:
         raise HTTPException(
